@@ -86,11 +86,16 @@ function LumiMark({ small = false }: { small?: boolean }) {
 }
 
 function LumiWordmark({ compact = false }: { compact?: boolean }) {
+  const logoSrc = "/lumi/lumi-logo.png";
   return (
     <img
       className={compact ? "lumi-wordmark compact" : "lumi-wordmark"}
-      src="lumi-logo.png"
+      src={logoSrc}
       alt="lumi"
+      onError={(event) => {
+        const fallback = "/lumi/public/lumi-logo.png";
+        if (!event.currentTarget.src.endsWith(fallback)) event.currentTarget.src = fallback;
+      }}
     />
   );
 }
@@ -435,6 +440,10 @@ export default function Home() {
               <span>◉</span> memory {memoryOn ? "on" : "off"}
             </button>
             <button className="round-button" onClick={() => setThemeOpen(true)} aria-label="Choose theme">◐</button>
+            <button className="account-chip" onClick={() => profile ? setSettingsOpen(true) : openAuth("login")} aria-label={profile ? "Open profile and settings" : "Log in to Lumi"}>
+              <span className="avatar">{(profile?.name || "g")[0].toLowerCase()}</span>
+              <span className="account-chip-copy"><strong>{profile?.name || "log in"}</strong><small>{profile ? "profile & settings" : "or sign up"}</small></span>
+            </button>
           </div>
         </header>
 
