@@ -20,14 +20,8 @@ button { color: inherit; }
 .app-shell { min-height: 100vh; display: flex; background: #111014; }
 .sidebar { width: 270px; height: 100vh; position: fixed; inset: 0 auto 0 0; padding: 25px 18px 18px; display: flex; flex-direction: column; overflow: hidden; background: rgba(20,19,24,.98); border-right: 1px solid var(--line); z-index: 20; }
 .brand-row { display: flex; align-items: center; padding: 0 9px 23px; }
-.lumi-wordmark { display: inline-flex; align-items: baseline; color: #fff; font-family: "Arial Black", "Arial Rounded MT Bold", Arial, sans-serif; font-size: clamp(68px, 8vw, 106px); font-weight: 950; line-height: .78; letter-spacing: -.115em; user-select: none; filter: drop-shadow(0 15px 34px rgba(112,82,255,.18)); }
-.lumi-wordmark span { display: inline-block; }
-.lumi-wordmark span:nth-child(2) { color: #c8bcff; transform: translateY(2px); }
-.lumi-wordmark span:nth-child(3) { color: #ffb48f; }
-.lumi-wordmark .logo-i { position: relative; color: #91e6cb; }
-.logo-i i { position: absolute; width: .17em; height: .17em; right: .03em; top: -.3em; border-radius: 50%; background: var(--yellow); box-shadow: 0 0 0 5px rgba(255,228,133,.12), 0 0 24px rgba(255,228,133,.6); animation: logo-float 2.8s ease-in-out infinite; }
-.lumi-wordmark.compact { font-size: 32px; letter-spacing: -.12em; filter: none; }
-.lumi-wordmark.compact .logo-i i { box-shadow: 0 0 12px rgba(255,228,133,.5); }
+.lumi-wordmark { display: block; width: clamp(250px, 34vw, 390px); height: auto; user-select: none; filter: drop-shadow(0 15px 34px rgba(112,82,255,.2)); }
+.lumi-wordmark.compact { width: 112px; filter: drop-shadow(0 7px 16px rgba(112,82,255,.16)); }
 .close-menu, .menu-button { display: none; }
 
 .new-button { width: 100%; border: 1px solid rgba(255,255,255,.12); background: #25222d; padding: 12px 14px; border-radius: 13px; font-size: 12px; font-weight: 750; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: .2s ease; }

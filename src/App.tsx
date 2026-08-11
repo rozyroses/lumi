@@ -68,9 +68,11 @@ function LumiMark({ small = false }: { small?: boolean }) {
 
 function LumiWordmark({ compact = false }: { compact?: boolean }) {
   return (
-    <div className={compact ? "lumi-wordmark compact" : "lumi-wordmark"} aria-label="lumi">
-      <span>l</span><span>u</span><span>m</span><span className="logo-i">i<i /></span>
-    </div>
+    <img
+      className={compact ? "lumi-wordmark compact" : "lumi-wordmark"}
+      src="/lumi/lumi-logo.png"
+      alt="lumi"
+    />
   );
 }
 
