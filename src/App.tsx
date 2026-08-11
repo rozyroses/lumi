@@ -6,11 +6,26 @@ import remarkGfm from "remark-gfm";
 
 type Mode = "chat" | "learn" | "create";
 type Message = { role: "lumi" | "user"; text: string };
-type Chat = { id: string; title: string; mode: Mode; messages: Message[]; updatedAt: number };
+type Chat = { id: string; title: string; mode: Mode; messages: Message[]; updatedAt: number; spaceId?: string };
+type Space = { id: string; name: string; description: string; instructions: string; color: "lavender" | "peach" | "mint" };
+type Theme = "midnight" | "cloud" | "berry" | "forest";
+type Profile = { name: string; email: string };
+type Memory = { id: string; text: string; createdAt: number };
 
 const CHATS_KEY = "lumi-chats-v1";
 const ACTIVE_CHAT_KEY = "lumi-active-chat-v1";
-const makeChat = (mode: Mode): Chat => ({ id: crypto.randomUUID(), title: "new adventure", mode, messages: [], updatedAt: Date.now() });
+const SPACES_KEY = "lumi-spaces-v1";
+const ACTIVE_SPACE_KEY = "lumi-active-space-v1";
+const THEME_KEY = "lumi-theme-v1";
+const PROFILE_KEY = "lumi-profile-v1";
+const MEMORIES_KEY = "lumi-memories-v1";
+const MEMORY_ON_KEY = "lumi-memory-enabled-v1";
+const DEFAULT_SPACES: Space[] = [
+  { id: "college-life", name: "college life", description: "classes, studying, deadlines, and campus life", instructions: "Help me stay organized, learn clearly, and make realistic school plans.", color: "lavender" },
+  { id: "music-ideas", name: "music ideas", description: "songs, eras, visuals, and releases", instructions: "Be an imaginative music and creative collaborator. Keep ideas original and specific.", color: "peach" },
+  { id: "big-dreams", name: "big dreams", description: "businesses, goals, and the wild ideas worth building", instructions: "Turn ambitious ideas into grounded next steps without shrinking the vision.", color: "mint" },
+];
+const makeChat = (mode: Mode, spaceId?: string): Chat => ({ id: crypto.randomUUID(), title: "new adventure", mode, messages: [], updatedAt: Date.now(), spaceId });
 
 const thinkingStages = [
   { label: "reading the room", detail: "getting the context and what you actually need" },
@@ -77,6 +92,7 @@ function LumiWordmark({ compact = false }: { compact?: boolean }) {
 }
 
 export default function Home() {
+  const [screen, setScreen] = useState<"home" | "app">("home");
   const [mode, setMode] = useState<Mode>("chat");
   const [input, setInput] = useState("");
   const [chats, setChats] = useState<Chat[]>([]);
@@ -86,10 +102,22 @@ export default function Home() {
   const [isThinking, setIsThinking] = useState(false);
   const [thinkingStage, setThinkingStage] = useState(0);
   const [toast, setToast] = useState("");
+  const [spaces, setSpaces] = useState<Space[]>(DEFAULT_SPACES);
+  const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
+  const [spaceEditorOpen, setSpaceEditorOpen] = useState(false);
+  const [editingSpace, setEditingSpace] = useState<Space | null>(null);
+  const [theme, setTheme] = useState<Theme>("midnight");
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [memories, setMemories] = useState<Memory[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const copy = modeCopy[mode];
   const activeChat = chats.find((chat) => chat.id === activeChatId);
   const messages = activeChat?.messages ?? [];
+  const activeSpace = spaces.find((space) => space.id === activeSpaceId);
+  const visibleChats = activeSpaceId ? chats.filter((chat) => chat.spaceId === activeSpaceId) : chats;
 
   useEffect(() => {
     try {
@@ -106,9 +134,36 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    try {
+      setTheme((localStorage.getItem(THEME_KEY) as Theme) || "midnight");
+      setProfile(JSON.parse(localStorage.getItem(PROFILE_KEY) || "null"));
+      setMemories(JSON.parse(localStorage.getItem(MEMORIES_KEY) || "[]"));
+      setMemoryOn(localStorage.getItem(MEMORY_ON_KEY) !== "false");
+    } catch { /* use defaults */ }
+  }, []);
+
+  useEffect(() => { localStorage.setItem(THEME_KEY, theme); }, [theme]);
+  useEffect(() => { localStorage.setItem(MEMORIES_KEY, JSON.stringify(memories)); }, [memories]);
+  useEffect(() => { localStorage.setItem(MEMORY_ON_KEY, String(memoryOn)); }, [memoryOn]);
+
+  useEffect(() => {
+    try {
+      const savedSpaces = JSON.parse(localStorage.getItem(SPACES_KEY) || "null") as Space[] | null;
+      if (savedSpaces?.length) setSpaces(savedSpaces);
+      setActiveSpaceId(localStorage.getItem(ACTIVE_SPACE_KEY));
+    } catch { setSpaces(DEFAULT_SPACES); }
+  }, []);
+
+  useEffect(() => {
     if (chats.length) localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
     if (activeChatId) localStorage.setItem(ACTIVE_CHAT_KEY, activeChatId);
   }, [chats, activeChatId]);
+
+  useEffect(() => {
+    localStorage.setItem(SPACES_KEY, JSON.stringify(spaces));
+    if (activeSpaceId) localStorage.setItem(ACTIVE_SPACE_KEY, activeSpaceId);
+    else localStorage.removeItem(ACTIVE_SPACE_KEY);
+  }, [spaces, activeSpaceId]);
 
   useEffect(() => {
     if (!isThinking) { setThinkingStage(0); return; }
@@ -129,15 +184,52 @@ export default function Home() {
     setToast(message); window.setTimeout(() => setToast(""), 2600);
   }
 
+  function rememberFrom(text: string) {
+    if (!memoryOn) return;
+    const candidates = text.split(/[.!?\n]+/).map((part) => part.trim()).filter((part) => /^(i am|i'm|my |i like|i love|i prefer|i want|i need|call me|remember)/i.test(part) && part.length > 8 && part.length < 180);
+    setMemories((current) => {
+      const known = new Set(current.map((item) => item.text.toLowerCase()));
+      const additions = candidates.filter((item) => !known.has(item.toLowerCase())).slice(0, 3).map((item) => ({ id: crypto.randomUUID(), text: item, createdAt: Date.now() }));
+      return [...current, ...additions].slice(-60);
+    });
+  }
+
+  function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const next = { name: String(data.get("name") || "explorer").trim().slice(0, 40), email: String(data.get("email") || "").trim().slice(0, 100) };
+    setProfile(next); localStorage.setItem(PROFILE_KEY, JSON.stringify(next)); setAuthOpen(false); setScreen("app"); showToast(`welcome home, ${next.name} ✦`);
+  }
+
+  function logout() { setProfile(null); localStorage.removeItem(PROFILE_KEY); setScreen("home"); setSidebarOpen(false); }
+
   function startNewChat(nextMode: Mode = mode) {
-    const existing = chats.find((chat) => chat.messages.length === 0 && chat.mode === nextMode);
+    const existing = chats.find((chat) => chat.messages.length === 0 && chat.mode === nextMode && chat.spaceId === (activeSpaceId || undefined));
     if (existing) setActiveChatId(existing.id);
-    else { const next = makeChat(nextMode); setChats((current) => [next, ...current]); setActiveChatId(next.id); }
+    else { const next = makeChat(nextMode, activeSpaceId || undefined); setChats((current) => [next, ...current]); setActiveChatId(next.id); }
     setMode(nextMode); setInput(""); setSidebarOpen(false);
     setTimeout(() => inputRef.current?.focus(), 50);
   }
 
   function openChat(chat: Chat) { setActiveChatId(chat.id); setMode(chat.mode); setSidebarOpen(false); }
+
+  function openSpace(space: Space) {
+    setActiveSpaceId(space.id);
+    const latest = [...chats].filter((chat) => chat.spaceId === space.id).sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    if (latest) openChat(latest);
+    else { const next = makeChat("chat", space.id); setChats((current) => [next, ...current]); setActiveChatId(next.id); setMode("chat"); }
+    setSidebarOpen(false);
+  }
+
+  function saveSpace(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const name = String(data.get("name") || "").trim();
+    if (!name) return;
+    const next: Space = { id: editingSpace?.id || crypto.randomUUID(), name: name.slice(0, 32), description: String(data.get("description") || "").trim().slice(0, 140), instructions: String(data.get("instructions") || "").trim().slice(0, 600), color: String(data.get("color") || "lavender") as Space["color"] };
+    setSpaces((current) => editingSpace ? current.map((space) => space.id === next.id ? next : space) : [...current, next]);
+    setActiveSpaceId(next.id); setEditingSpace(null); setSpaceEditorOpen(false); showToast(`“${next.name}” is ready ✦`);
+  }
 
   function renameChat(chat: Chat) {
     const title = window.prompt("name this adventure", chat.title)?.trim();
@@ -155,11 +247,15 @@ export default function Home() {
     const clean = text.trim();
     if (!clean || isThinking) return;
     const nextMessages: Message[] = [...messages, { role: "user", text: clean }];
+    rememberFrom(clean);
     updateActive(nextMessages); setInput(""); setIsThinking(true);
     try {
       const response = await fetch("https://luni-gateway.roosevelt-wooden.workers.dev/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, messages: nextMessages.map((message) => ({ role: message.role === "lumi" ? "assistant" : "user", content: message.text })) }),
+        body: JSON.stringify({ mode, space: activeSpace ? { name: activeSpace.name, instructions: activeSpace.instructions } : null, messages: [
+          ...(memoryOn && memories.length ? [{ role: "user", content: `[background memory — use only when relevant; never mention this block unless asked]\n${memories.slice(-24).map((item) => `- ${item.text}`).join("\n")}` }] : []),
+          ...nextMessages.map((message) => ({ role: message.role === "lumi" ? "assistant" : "user", content: message.text }))
+        ] }),
       });
       const result = await response.json();
       if (!response.ok || typeof result.reply !== "string") throw new Error(result.error || "Lumi could not answer.");
@@ -180,8 +276,24 @@ export default function Home() {
     startNewChat(next);
   }
 
+  const overlays = <>
+    {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="modal-card auth-card" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}>×</button><p className="modal-kicker">lumi profile</p><h2>let’s know who’s here</h2><p className="beta-note">private beta profiles live on this device for now. secure cross-device sync comes with the account backend.</p><label>your name<input name="name" defaultValue={profile?.name} required placeholder="what should lumi call you?" /></label><label>email<input name="email" type="email" defaultValue={profile?.email} required placeholder="you@example.com" /></label><button className="modal-primary">continue ✦</button></form></div>}
+    {memoryOpen && <div className="modal-backdrop" onMouseDown={() => setMemoryOpen(false)}><div className="modal-card memory-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setMemoryOpen(false)}>×</button><p className="modal-kicker">lumi memory</p><h2>what i remember</h2><div className="memory-control"><span><strong>use memory across chats</strong><small>only sends these notes when they can help</small></span><button className={memoryOn ? "toggle on" : "toggle"} onClick={() => setMemoryOn(!memoryOn)}><i /></button></div><div className="memory-list">{memories.length ? memories.map((memory) => <div className="memory-item" key={memory.id}><p>{memory.text}</p><button onClick={() => setMemories((current) => current.filter((item) => item.id !== memory.id))}>×</button></div>) : <div className="empty-memory">nothing saved yet. tell Lumi things naturally and useful details will appear here ✦</div>}</div>{memories.length > 0 && <button className="danger-link" onClick={() => window.confirm("clear everything Lumi remembers?") && setMemories([])}>clear all memory</button>}</div></div>}
+    {themeOpen && <ThemePicker theme={theme} setTheme={setTheme} close={() => setThemeOpen(false)} />}
+  </>;
+
+  if (screen === "home") return (
+    <main className="landing" data-theme={theme}>
+      <nav className="landing-nav"><LumiWordmark compact /><div><button className="text-button" onClick={() => setAuthOpen(true)}>log in</button><button className="landing-cta" onClick={() => setScreen("app")}>try lumi ✦</button></div></nav>
+      <section className="landing-hero"><div className="hero-copy"><p className="eyebrow">your bright little brain</p><h1>an ai that gets to know <em>you.</em></h1><p>lumi helps you think, learn, create, and keep life moving—without making you start over in every new chat.</p><div className="hero-actions"><button className="landing-cta large" onClick={() => setScreen("app")}>start a little adventure ↗</button><button className="text-button" onClick={() => setAuthOpen(true)}>i already have a profile</button></div></div><div className="hero-graphic"><span className="orbit orbit-one">learn</span><span className="orbit orbit-two">create</span><span className="orbit orbit-three">remember</span><div className="hero-orb"><b>✦</b><small>hey, i’m lumi</small></div></div></section>
+      <section className="feature-strip"><article><span>01</span><h2>memory, with manners</h2><p>Lumi remembers the useful stuff across chats. see it, edit it, pause it, or wipe it.</p></article><article><span>02</span><h2>three ways to think</h2><p>chat through life, learn at your pace, or build the thing living in your head.</p></article><article><span>03</span><h2>your vibe, too</h2><p>switch themes whenever the mood changes. the personality stays Lumi.</p></article></section>
+      <footer className="landing-footer"><LumiWordmark compact /><p>made for curious people with a lot going on.</p><button className="text-button" onClick={() => setThemeOpen(true)}>change the mood ◐</button></footer>
+      {overlays}
+    </main>
+  );
+
   return (
-    <main className={`app-shell mode-${mode} ${isThinking ? "is-thinking" : ""}`}>
+    <main className={`app-shell mode-${mode} ${isThinking ? "is-thinking" : ""}`} data-theme={theme}>
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="brand-row">
           <LumiWordmark compact />
@@ -209,7 +321,7 @@ export default function Home() {
         <section className="history">
           <p className="nav-label">recent adventures</p>
           <div className="history-list">
-            {[...chats].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8).map((chat) => (
+            {[...visibleChats].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8).map((chat) => (
               <div className={chat.id === activeChatId ? "history-row active" : "history-row"} key={chat.id}>
                 <button className="history-open" onClick={() => openChat(chat)}>
                   <span className={`history-gem ${chat.mode}`} /><span>{chat.title}</span>
@@ -222,16 +334,14 @@ export default function Home() {
         </section>
 
         <section className="spaces">
-          <div className="spaces-title"><span>my spaces</span><button onClick={() => showToast("custom Spaces are coming next ✦")} aria-label="Add space">＋</button></div>
-          <button className="space-item" onClick={() => showToast("college life is getting its own workspace soon")}><span className="space-dot lavender" /> college life</button>
-          <button className="space-item" onClick={() => showToast("music ideas is getting its own workspace soon")}><span className="space-dot peach" /> music ideas</button>
-          <button className="space-item" onClick={() => showToast("big dreams is getting its own workspace soon")}><span className="space-dot mint" /> big dreams</button>
+          <div className="spaces-title"><button className={!activeSpaceId ? "spaces-home active" : "spaces-home"} onClick={() => setActiveSpaceId(null)}>my spaces</button><button onClick={() => { setEditingSpace(null); setSpaceEditorOpen(true); }} aria-label="Add space">＋</button></div>
+          {spaces.map((space) => <div className={activeSpaceId === space.id ? "space-row active" : "space-row"} key={space.id}><button className="space-item" onClick={() => openSpace(space)}><span className={`space-dot ${space.color}`} /> {space.name}</button><button className="space-edit" onClick={() => { setEditingSpace(space); setSpaceEditorOpen(true); }} aria-label={`Edit ${space.name}`}>•••</button></div>)}
         </section>
 
         <div className="sidebar-bottom">
-          <button className="profile-button" onClick={() => showToast("profiles and sign-in are coming soon") }>
-            <span className="avatar">r</span>
-            <span><strong>roosevelt</strong><small>free explorer</small></span>
+          <button className="profile-button" onClick={() => profile ? logout() : setAuthOpen(true)}>
+            <span className="avatar">{(profile?.name || "g")[0].toLowerCase()}</span>
+            <span><strong>{profile?.name || "guest explorer"}</strong><small>{profile ? "tap to log out" : "tap to log in"}</small></span>
             <span className="dots">•••</span>
           </button>
         </div>
@@ -243,12 +353,12 @@ export default function Home() {
         <div className="thinking-aurora" aria-hidden="true"><i /><i /><i /></div>
         <header className="topbar">
           <button className="menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open menu">☰</button>
-          <div className="mode-pill"><span className={`mode-gem ${mode}`} /> {mode === "chat" ? "lumi chat" : `lumi ${mode}`}</div>
+          <div className="mode-pill"><span className={`mode-gem ${mode}`} /> {activeSpace ? activeSpace.name : mode === "chat" ? "lumi chat" : `lumi ${mode}`}</div>
           <div className="top-actions">
-            <button className={`memory-pill ${memoryOn ? "on" : ""}`} onClick={() => setMemoryOn(!memoryOn)}>
+            <button className={`memory-pill ${memoryOn ? "on" : ""}`} onClick={() => setMemoryOpen(true)}>
               <span>◉</span> memory {memoryOn ? "on" : "off"}
             </button>
-            <button className="round-button" onClick={() => showToast("you’re all caught up ✦")} aria-label="Notifications">♢</button>
+            <button className="round-button" onClick={() => setThemeOpen(true)} aria-label="Choose theme">◐</button>
           </div>
         </header>
 
@@ -259,6 +369,7 @@ export default function Home() {
               <p className="eyebrow">{copy.eyebrow}</p>
               <h1>{copy.title}</h1>
               <p className="subtitle">{copy.subtitle}</p>
+              {activeSpace && <div className="space-banner"><span className={`space-dot ${activeSpace.color}`} /><span><strong>{activeSpace.name}</strong><small>{activeSpace.description}</small></span><button onClick={() => { setEditingSpace(activeSpace); setSpaceEditorOpen(true); }}>edit</button></div>}
 
               <div className="starter-grid">
                 {copy.starters.map(([icon, title, description], index) => (
@@ -329,6 +440,13 @@ export default function Home() {
         </div>
       </section>
       {toast && <div className="toast" role="status">{toast}</div>}
+      {spaceEditorOpen && <div className="modal-backdrop" onMouseDown={() => setSpaceEditorOpen(false)}><form className="modal-card" onSubmit={saveSpace} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setSpaceEditorOpen(false)}>×</button><p className="modal-kicker">lumi space</p><h2>{editingSpace ? "shape this space" : "make a new space"}</h2><label>name<input name="name" defaultValue={editingSpace?.name} placeholder="my brilliant thing" required /></label><label>what belongs here<input name="description" defaultValue={editingSpace?.description} placeholder="projects, notes, ideas..." /></label><label>how lumi should help<textarea name="instructions" defaultValue={editingSpace?.instructions} placeholder="tell lumi the tone, goals, and rules for this space" /></label><label>color<select name="color" defaultValue={editingSpace?.color || "lavender"}><option value="lavender">lavender</option><option value="peach">peach</option><option value="mint">mint</option></select></label><button className="modal-primary" type="submit">save space ✦</button></form></div>}
+      {overlays}
     </main>
   );
+}
+
+function ThemePicker({ theme, setTheme, close }: { theme: Theme; setTheme: (theme: Theme) => void; close: () => void }) {
+  const themes: { id: Theme; label: string; detail: string }[] = [{ id: "midnight", label: "midnight glow", detail: "deep plum + lavender" }, { id: "cloud", label: "soft cloud", detail: "warm light + lilac" }, { id: "berry", label: "berry pop", detail: "magenta + peach" }, { id: "forest", label: "digital garden", detail: "ink + electric mint" }];
+  return <div className="modal-backdrop" onMouseDown={close}><div className="modal-card theme-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={close}>×</button><p className="modal-kicker">make it yours</p><h2>pick a Lumi mood</h2><div className="theme-grid">{themes.map((item) => <button key={item.id} className={theme === item.id ? `theme-option ${item.id} active` : `theme-option ${item.id}`} onClick={() => setTheme(item.id)}><span className="theme-preview"><i /><i /><i /></span><strong>{item.label}</strong><small>{item.detail}</small></button>)}</div></div></div>;
 }
