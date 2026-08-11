@@ -3,13 +3,14 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { createClient, type Session } from "@supabase/supabase-js";
 
 type Mode = "chat" | "learn" | "create";
 type Message = { role: "lumi" | "user"; text: string };
 type Chat = { id: string; title: string; mode: Mode; messages: Message[]; updatedAt: number; spaceId?: string };
 type Space = { id: string; name: string; description: string; instructions: string; color: "lavender" | "peach" | "mint" };
 type Theme = "midnight" | "cloud" | "berry" | "forest";
-type Profile = { name: string; email: string };
+type Profile = { id?: string; name: string; email: string };
 type Memory = { id: string; text: string; createdAt: number };
 
 const CHATS_KEY = "lumi-chats-v1";
@@ -20,6 +21,9 @@ const THEME_KEY = "lumi-theme-v1";
 const PROFILE_KEY = "lumi-profile-v1";
 const MEMORIES_KEY = "lumi-memories-v1";
 const MEMORY_ON_KEY = "lumi-memory-enabled-v1";
+const SUPABASE_URL = "https://yrammmjnviozydebshbd.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ecQn0VjaNhnsJR_Kys_Efg_z-CQvzin";
+const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 const DEFAULT_SPACES: Space[] = [
   { id: "college-life", name: "college life", description: "classes, studying, deadlines, and campus life", instructions: "Help me stay organized, learn clearly, and make realistic school plans.", color: "lavender" },
   { id: "music-ideas", name: "music ideas", description: "songs, eras, visuals, and releases", instructions: "Be an imaginative music and creative collaborator. Keep ideas original and specific.", color: "peach" },
@@ -109,6 +113,9 @@ export default function Home() {
   const [theme, setTheme] = useState<Theme>("midnight");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -131,6 +138,17 @@ export default function Home() {
     } catch {
       const first = makeChat("chat"); setChats([first]); setActiveChatId(first.id);
     }
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (mounted) applySession(data.session);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (mounted) applySession(nextSession);
+    });
+    return () => { mounted = false; listener.subscription.unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -194,14 +212,55 @@ export default function Home() {
     });
   }
 
-  function saveProfile(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const next = { name: String(data.get("name") || "explorer").trim().slice(0, 40), email: String(data.get("email") || "").trim().slice(0, 100) };
-    setProfile(next); localStorage.setItem(PROFILE_KEY, JSON.stringify(next)); setAuthOpen(false); setScreen("app"); showToast(`welcome home, ${next.name} ✦`);
+  function applySession(nextSession: Session | null) {
+    if (!nextSession?.user) {
+      setProfile(null);
+      localStorage.removeItem(PROFILE_KEY);
+      return;
+    }
+    const nextProfile = {
+      id: nextSession.user.id,
+      name: String(nextSession.user.user_metadata?.name || nextSession.user.email?.split("@")[0] || "explorer"),
+      email: nextSession.user.email || "",
+    };
+    setProfile(nextProfile);
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(nextProfile));
   }
 
-  function logout() { setProfile(null); localStorage.removeItem(PROFILE_KEY); setScreen("home"); setSidebarOpen(false); }
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const name = String(data.get("name") || "explorer").trim().slice(0, 40);
+    const email = String(data.get("email") || "").trim().slice(0, 100);
+    const password = String(data.get("password") || "");
+    setAuthBusy(true); setAuthError("");
+    try {
+      if (authMode === "signup") {
+        const { data: result, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { name }, emailRedirectTo: window.location.origin + "/lumi/" },
+        });
+        if (error) throw error;
+        if (!result.session) {
+          showToast("check your email to confirm your Lumi account ✦");
+          setAuthOpen(false);
+          return;
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
+      setAuthOpen(false); setScreen("app"); showToast(`welcome home, ${name} ✦`);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Lumi couldn't sign you in. try again.");
+    } finally { setAuthBusy(false); }
+  }
+
+  async function logout() {
+    await supabase.auth.signOut();
+    setScreen("home"); setSidebarOpen(false); showToast("logged out safely ✦");
+  }
 
   function startNewChat(nextMode: Mode = mode) {
     const existing = chats.find((chat) => chat.messages.length === 0 && chat.mode === nextMode && chat.spaceId === (activeSpaceId || undefined));
@@ -277,7 +336,7 @@ export default function Home() {
   }
 
   const overlays = <>
-    {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="modal-card auth-card" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}>×</button><p className="modal-kicker">lumi profile</p><h2>let’s know who’s here</h2><p className="beta-note">private beta profiles live on this device for now. secure cross-device sync comes with the account backend.</p><label>your name<input name="name" defaultValue={profile?.name} required placeholder="what should lumi call you?" /></label><label>email<input name="email" type="email" defaultValue={profile?.email} required placeholder="you@example.com" /></label><button className="modal-primary">continue ✦</button></form></div>}
+    {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="modal-card auth-card" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}>×</button><p className="modal-kicker">lumi account</p><h2>{authMode === "signup" ? "make Lumi yours" : "welcome back"}</h2><p className="beta-note">real Supabase accounts are here. your password is handled securely and never stored by Lumi.</p>{authMode === "signup" && <label>your name<input name="name" defaultValue={profile?.name} required placeholder="what should lumi call you?" autoComplete="name" /></label>}<label>email<input name="email" type="email" defaultValue={profile?.email} required placeholder="you@example.com" autoComplete="email" /></label><label>password<input name="password" type="password" required minLength={6} placeholder="at least 6 characters" autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></label>{authError && <p className="auth-error" role="alert">{authError}</p>}<button className="modal-primary" disabled={authBusy}>{authBusy ? "one sec..." : authMode === "signup" ? "create account ✦" : "log in ✦"}</button><button type="button" className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthError(""); }}>{authMode === "signup" ? "already have an account? log in" : "new here? create an account"}</button></form></div>}
     {memoryOpen && <div className="modal-backdrop" onMouseDown={() => setMemoryOpen(false)}><div className="modal-card memory-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setMemoryOpen(false)}>×</button><p className="modal-kicker">lumi memory</p><h2>what i remember</h2><div className="memory-control"><span><strong>use memory across chats</strong><small>only sends these notes when they can help</small></span><button className={memoryOn ? "toggle on" : "toggle"} onClick={() => setMemoryOn(!memoryOn)}><i /></button></div><div className="memory-list">{memories.length ? memories.map((memory) => <div className="memory-item" key={memory.id}><p>{memory.text}</p><button onClick={() => setMemories((current) => current.filter((item) => item.id !== memory.id))}>×</button></div>) : <div className="empty-memory">nothing saved yet. tell Lumi things naturally and useful details will appear here ✦</div>}</div>{memories.length > 0 && <button className="danger-link" onClick={() => window.confirm("clear everything Lumi remembers?") && setMemories([])}>clear all memory</button>}</div></div>}
     {themeOpen && <ThemePicker theme={theme} setTheme={setTheme} close={() => setThemeOpen(false)} />}
   </>;
