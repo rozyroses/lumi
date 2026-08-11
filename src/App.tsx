@@ -12,6 +12,7 @@ type Space = { id: string; name: string; description: string; instructions: stri
 type Theme = "midnight" | "cloud" | "berry" | "forest";
 type Profile = { id?: string; name: string; email: string };
 type Memory = { id: string; text: string; createdAt: number; updatedAt: number; spaceId?: string; status: "pending" | "approved" };
+type Onboarding = { name: string; pronouns: string; style: string; interests: string };
 
 const CHATS_KEY = "lumi-chats-v1";
 const ACTIVE_CHAT_KEY = "lumi-active-chat-v1";
@@ -22,6 +23,7 @@ const PROFILE_KEY = "lumi-profile-v1";
 const MEMORIES_KEY = "lumi-memories-v1";
 const MEMORY_ON_KEY = "lumi-memory-enabled-v1";
 const CHAT_PREFS_KEY = "lumi-chat-preferences-v1";
+const ONBOARDING_KEY = "lumi-onboarding-v1";
 const SUPABASE_URL = "https://yrammmjnviozydebshbd.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ecQn0VjaNhnsJR_Kys_Efg_z-CQvzin";
 const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -138,6 +140,10 @@ export default function Home() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountBusy, setAccountBusy] = useState(false);
   const [accountError, setAccountError] = useState("");
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [chatError, setChatError] = useState("");
+  const [lastFailedMessages, setLastFailedMessages] = useState<Message[] | null>(null);
   const [chatSearch, setChatSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -174,6 +180,15 @@ export default function Home() {
     } catch {
       const first = makeChat("chat"); setChats([first]); setActiveChatId(first.id);
     }
+  }, []);
+
+  useEffect(() => {
+    const online = () => { setIsOnline(true); setChatError(""); };
+    const offline = () => setIsOnline(false);
+    window.addEventListener("online", online);
+    window.addEventListener("offline", offline);
+    if (!localStorage.getItem(ONBOARDING_KEY)) setOnboardingOpen(true);
+    return () => { window.removeEventListener("online", online); window.removeEventListener("offline", offline); };
   }, []);
 
   useEffect(() => {
@@ -312,11 +327,38 @@ export default function Home() {
     setMemories((current) => {
       const known = new Set(current.map((item) => item.text.toLowerCase()));
       const now = Date.now();
+      const memoryKind = (item: string) => {
+        const rules: [string, RegExp][] = [["name", /\b(my name is|call me)\b/i], ["location", /\b(i live|i moved|i'm from|i am from)\b/i], ["school", /\b(i study|my school|i attend)\b/i], ["work", /\b(i work|my job)\b/i], ["goal", /\b(my goal|i want to|i plan to|i hope to)\b/i], ["preference", /\b(i prefer|my favorite|i like|i love|i hate)\b/i]];
+        return rules.find(([, pattern]) => pattern.test(item))?.[0] || "detail";
+      };
+      const replacingKinds = new Set(candidates.map(memoryKind).filter((kind) => kind !== "detail" && kind !== "preference"));
+      const replaced = current.filter((item) => replacingKinds.has(memoryKind(item.text)) && candidates.every((candidate) => candidate.toLowerCase() !== item.text.toLowerCase()));
+      if (replaced.length && profile?.id && cloudReady) void supabase.from("lumi_memories").delete().in("id", replaced.map((item) => item.id)).eq("user_id", profile.id);
+      const kept = current.filter((item) => !replaced.some((old) => old.id === item.id));
       const additions = candidates.filter((item) => !known.has(item.toLowerCase())).slice(0, 3).map((item): Memory => ({ id: crypto.randomUUID(), text: item, createdAt: now, updatedAt: now, spaceId: activeSpaceId || undefined, status: "approved" }));
       if (additions.length) showToast(`memory saved automatically ${additions.length > 1 ? `(${additions.length}) ` : ""}✦`);
-      return [...current, ...additions].slice(-100);
+      return [...kept, ...additions].slice(-100);
     });
   }
+
+  function finishOnboarding(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const values: Onboarding = { name: String(data.get("name") || profile?.name || "explorer").trim().slice(0, 40), pronouns: String(data.get("pronouns") || "").trim().slice(0, 30), style: String(data.get("style") || "warm and playful"), interests: String(data.get("interests") || "").trim().slice(0, 180) };
+    localStorage.setItem(ONBOARDING_KEY, JSON.stringify(values));
+    const now = Date.now();
+    const starterMemories = [`call me ${values.name}`, values.pronouns && `my pronouns are ${values.pronouns}`, `i prefer Lumi to communicate in a ${values.style} style`, values.interests && `my interests include ${values.interests}`].filter(Boolean);
+    setMemories((current) => {
+      const known = new Set(current.map((item) => item.text.toLowerCase()));
+      return [...current, ...starterMemories.filter((item) => !known.has(item.toLowerCase())).map((item): Memory => ({ id: crypto.randomUUID(), text: item, createdAt: now, updatedAt: now, status: "approved" }))];
+    });
+    if (profile?.id) void supabase.auth.updateUser({ data: { name: values.name, lumi_onboarding: values, lumi_onboarding_complete: true } });
+    setProfile((current) => current ? { ...current, name: values.name } : current);
+    setOnboardingOpen(false);
+    showToast("Lumi is tuned to you ✦");
+  }
+
+  function skipOnboarding() { localStorage.setItem(ONBOARDING_KEY, "skipped"); setOnboardingOpen(false); }
 
   function updateMemory(memory: Memory) {
     const text = window.prompt("edit what Lumi should remember", memory.text)?.trim();
@@ -355,6 +397,7 @@ export default function Home() {
       setChats((current) => current.map((chat) => ({ ...chat, ...preferences[chat.id] })));
       localStorage.setItem(CHAT_PREFS_KEY, JSON.stringify(preferences));
     }
+    if (metadata.lumi_onboarding_complete) localStorage.setItem(ONBOARDING_KEY, JSON.stringify(metadata.lumi_onboarding || { complete: true }));
     setProfile(nextProfile);
     localStorage.setItem(PROFILE_KEY, JSON.stringify(nextProfile));
   }
@@ -525,6 +568,8 @@ export default function Home() {
     const controller = new AbortController();
     requestController.current = controller;
     setIsThinking(true);
+    setChatError("");
+    setLastFailedMessages(null);
     try {
       const response = await fetch("https://luni-gateway.roosevelt-wooden.workers.dev/chat", {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
@@ -539,7 +584,8 @@ export default function Home() {
     } catch (error) {
       if ((error as Error).name !== "AbortError") {
         console.error("Lumi chat request failed", error);
-        updateActive([...nextMessages, { role: "lumi", text: "my brain connection hiccupped for a second. try that again in a moment ✦" }]);
+        setLastFailedMessages(nextMessages);
+        setChatError(navigator.onLine ? "Lumi couldn’t reach her brain right now." : "you’re offline. your message is safe on this device.");
       }
     } finally { requestController.current = null; setIsThinking(false); }
   }
@@ -578,6 +624,7 @@ export default function Home() {
   }
 
   const overlays = <>
+    {onboardingOpen && <div className="modal-backdrop onboarding-backdrop"><form className="modal-card onboarding-card" onSubmit={finishOnboarding}><p className="modal-kicker">meet your lumi</p><h2>let’s tune the vibe ✦</h2><p className="onboarding-intro">a few quick choices help Lumi sound right from the very first chat. you can change all of this later.</p><label>what should Lumi call you?<input name="name" defaultValue={profile?.name || ""} placeholder="your name" required autoFocus /></label><label>pronouns <span>(optional)</span><input name="pronouns" placeholder="she/her, he/him, they/them…" /></label><label>how should Lumi talk with you?<select name="style" defaultValue="warm and playful"><option value="warm and playful">warm + playful</option><option value="direct and concise">direct + concise</option><option value="patient and detailed">patient + detailed</option><option value="creative and energetic">creative + energetic</option></select></label><label>what are you into? <span>(optional)</span><textarea name="interests" placeholder="music, school, business ideas, gaming…" /></label><div className="onboarding-actions"><button type="button" className="text-button" onClick={skipOnboarding}>skip for now</button><button className="modal-primary">make Lumi mine ✦</button></div></form></div>}
     {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="modal-card auth-card" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}>×</button><p className="modal-kicker">lumi account</p><h2>{authMode === "signup" ? "make Lumi yours" : "welcome back"}</h2><p className="beta-note">real Supabase accounts are here. your password is handled securely and never stored by Lumi.</p>{authMode === "signup" && <label>your name<input name="name" defaultValue={profile?.name} required placeholder="what should lumi call you?" autoComplete="name" /></label>}<label>email<input name="email" type="email" defaultValue={profile?.email} required placeholder="you@example.com" autoComplete="email" /></label><label>password<input name="password" type="password" required minLength={6} placeholder="at least 6 characters" autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></label>{authError && <p className="auth-error" role="alert">{authError}</p>}<button className="modal-primary" disabled={authBusy}>{authBusy ? "one sec..." : authMode === "signup" ? "create account ✦" : "log in ✦"}</button><button type="button" className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthError(""); }}>{authMode === "signup" ? "already have an account? log in" : "new here? create an account"}</button></form></div>}
     {memoryOpen && <div className="modal-backdrop" onMouseDown={() => setMemoryOpen(false)}><div className="modal-card memory-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setMemoryOpen(false)}>×</button><p className="modal-kicker">lumi memory</p><h2>memory, with manners</h2><div className="memory-control"><span><strong>use memory across chats</strong><small>approved memories can help in future chats</small></span><button className={memoryOn ? "toggle on" : "toggle"} onClick={() => setMemoryOn(!memoryOn)}><i /></button></div><div className="memory-tabs"><button className={memoryTab === "saved" ? "active" : ""} onClick={() => setMemoryTab("saved")}>saved <span>{memories.filter((item) => item.status === "approved").length}</span></button><button className={memoryTab === "review" ? "active" : ""} onClick={() => setMemoryTab("review")}>review <span>{memories.filter((item) => item.status === "pending").length}</span></button></div><div className="memory-list">{memories.filter((item) => item.status === (memoryTab === "saved" ? "approved" : "pending")).length ? memories.filter((item) => item.status === (memoryTab === "saved" ? "approved" : "pending")).map((memory) => <div className="memory-item" key={memory.id}><div><p>{memory.text}</p><small>{memory.spaceId ? spaces.find((space) => space.id === memory.spaceId)?.name || "Space memory" : "all chats"}</small></div><div className="memory-actions">{memory.status === "pending" && <button className="approve" onClick={() => setMemories((current) => current.map((item) => item.id === memory.id ? { ...item, status: "approved", updatedAt: Date.now() } : item))}>save</button>}<button onClick={() => updateMemory(memory)} aria-label="Edit memory">✎</button><button onClick={() => deleteMemory(memory)} aria-label="Delete memory">×</button></div></div>) : <div className="empty-memory">{memoryTab === "review" ? "no suggestions waiting. Lumi will ask before remembering new details ✦" : "nothing saved yet. approved details will appear here ✦"}</div>}</div>{memories.length > 0 && <button className="danger-link" onClick={clearAllMemories}>clear all memory</button>}</div></div>}
     {themeOpen && <ThemePicker theme={theme} setTheme={chooseTheme} close={() => setThemeOpen(false)} />}
@@ -647,6 +694,7 @@ export default function Home() {
         </section>
 
         <div className="sidebar-bottom">
+          <button className="settings-launch" onClick={() => setOnboardingOpen(true)}><span>✦</span> tune lumi</button>
           <button className="settings-launch" onClick={() => setSettingsOpen(true)}><span>⚙</span> settings</button>
           <div className="profile-button">
             <span className="avatar">{(profile?.name || "g")[0].toLowerCase()}</span>
@@ -736,6 +784,7 @@ export default function Home() {
           )}
 
           <div className="composer-wrap">
+            {(!isOnline || chatError) && <div className="recovery-banner" role="alert"><span>{isOnline ? "↻" : "⌁"}</span><div><strong>{isOnline ? "Lumi hit a connection snag" : "you’re offline"}</strong><small>{chatError || "regular chats stay on this device until you reconnect."}</small></div>{lastFailedMessages && isOnline && <button onClick={() => void generateReply(lastFailedMessages)}>try again</button>}</div>}
             {isTemporary && <div className="temporary-notice"><span>◌</span><strong>temporary chat</strong> this conversation won’t be saved, synced, or used for memory.</div>}
             <form className="composer" onSubmit={handleSubmit}>
               <button type="button" className="add-button" onClick={() => showToast("file uploads are coming soon ✦")} aria-label="Add attachment">＋</button>
