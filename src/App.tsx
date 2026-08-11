@@ -279,13 +279,20 @@ export default function Home() {
     setToast(message); window.setTimeout(() => setToast(""), 2600);
   }
 
-  function suggestMemoriesFrom(text: string) {
+  function saveMemoriesFrom(text: string) {
     if (!memoryOn || isTemporary) return;
-    const candidates = text.split(/[.!?\n]+/).map((part) => part.trim()).filter((part) => /^(i am|i'm|my |i like|i love|i prefer|i want|i need|call me|remember)/i.test(part) && part.length > 8 && part.length < 180);
+    const memoryCue = /\b(i am|i'm|i study|i work|i live|i have|i like|i love|i hate|i prefer|i want|i need|i plan|i hope|my (?:name|goal|birthday|school|job|project|business|family|friend|partner|favorite)|call me|remember(?: that)?)\b/i;
+    const sensitiveCue = /\b(password|passcode|pin|social security|ssn|credit card|debit card|bank account|routing number|api key|secret key|access token|private key)\b/i;
+    const candidates = text
+      .split(/[.!?\n]+/)
+      .map((part) => part.trim())
+      .filter((part) => memoryCue.test(part) && !sensitiveCue.test(part) && part.length > 8 && part.length < 220);
     setMemories((current) => {
       const known = new Set(current.map((item) => item.text.toLowerCase()));
-      const additions = candidates.filter((item) => !known.has(item.toLowerCase())).slice(0, 3).map((item): Memory => ({ id: crypto.randomUUID(), text: item, createdAt: Date.now(), updatedAt: Date.now(), spaceId: activeSpaceId || undefined, status: "pending" }));
-      return [...current, ...additions].slice(-60);
+      const now = Date.now();
+      const additions = candidates.filter((item) => !known.has(item.toLowerCase())).slice(0, 3).map((item): Memory => ({ id: crypto.randomUUID(), text: item, createdAt: now, updatedAt: now, spaceId: activeSpaceId || undefined, status: "approved" }));
+      if (additions.length) showToast(`memory saved automatically ${additions.length > 1 ? `(${additions.length}) ` : ""}✦`);
+      return [...current, ...additions].slice(-100);
     });
   }
 
@@ -424,7 +431,7 @@ export default function Home() {
     const clean = text.trim();
     if (!clean || isThinking) return;
     const nextMessages: Message[] = [...messages, { role: "user", text: clean }];
-    suggestMemoriesFrom(clean);
+    saveMemoriesFrom(clean);
     updateActive(nextMessages); setInput(""); setIsThinking(true);
     try {
       const response = await fetch("https://luni-gateway.roosevelt-wooden.workers.dev/chat", {
