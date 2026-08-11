@@ -150,6 +150,14 @@ h1 { margin: 0; font-size: clamp(36px, 5vw, 59px); line-height: .98; letter-spac
 .composer-wrap { width: min(820px, 100%); margin-top: 31px; }
 .temporary-button { width:100%; margin:-4px 0 14px; padding:8px 12px; display:flex; align-items:center; gap:9px; border:1px dashed rgba(255,228,133,.2); border-radius:11px; background:rgba(255,228,133,.035); color:#aaa28a; cursor:pointer; font-size:10px; font-weight:750; }.temporary-button:hover { background:rgba(255,228,133,.07); color:var(--yellow); }.temporary-notice { display:flex; align-items:center; justify-content:center; gap:6px; margin:0 auto 8px; color:#9c947d; font-size:9px; }.temporary-notice span { color:var(--yellow); font-size:13px; }.temporary-notice strong { color:#d9cea8; }
 .composer { display: flex; align-items: center; padding: 7px 8px 7px 10px; border-radius: 20px; border: 1px solid rgba(183,166,255,.22); background: rgba(31,29,37,.92); box-shadow: 0 14px 45px rgba(0,0,0,.22), 0 0 0 1px rgba(255,255,255,.02); backdrop-filter: blur(18px); }
+.file-input { display:none; }
+.attachment-tray { display:flex; gap:8px; overflow-x:auto; padding:0 2px 9px; scrollbar-width:thin; }
+.attachment-chip { min-width:190px; max-width:250px; display:grid; grid-template-columns:42px minmax(0,1fr) 24px; align-items:center; gap:9px; padding:8px; border:1px solid var(--hairline); border-radius:14px; background:rgba(30,26,38,.94); box-shadow:0 10px 28px rgba(0,0,0,.15); }
+.attachment-chip > img,.attachment-chip > span { width:42px; height:42px; border-radius:10px; object-fit:cover; }
+.attachment-chip > span { display:grid; place-items:center; background:rgba(183,166,255,.12); color:var(--lavender); font-size:8px; font-weight:900; }
+.attachment-chip strong,.attachment-chip small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.attachment-chip strong { font-size:9px; }.attachment-chip small { margin-top:3px; color:var(--muted); font-size:8px; }.attachment-chip button { width:24px; height:24px; border:0; border-radius:50%; background:rgba(255,255,255,.06); color:var(--muted); cursor:pointer; }
+.message-attachments { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin-bottom:9px; }
+.message-file { min-width:0; display:flex; align-items:center; gap:8px; padding:7px; border:1px solid rgba(41,27,61,.12); border-radius:11px; background:rgba(255,255,255,.2); }.message-file img,.file-icon { width:44px; height:44px; flex:0 0 auto; border-radius:9px; object-fit:cover; }.file-icon { display:grid; place-items:center; background:rgba(38,27,58,.13); font-size:8px; font-weight:950; }.message-file > span:last-child { min-width:0; }.message-file strong,.message-file small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.message-file strong { font-size:9px; }.message-file small { margin-top:3px; font-size:8px; opacity:.65; }
 .is-thinking .composer { border-color: rgba(183,166,255,.44); box-shadow: 0 14px 45px rgba(0,0,0,.25), 0 0 30px rgba(112,82,255,.12); }
 .composer input { flex: 1; min-width: 0; height: 43px; border: 0; background: transparent; outline: none; padding: 0 11px; color: #f7f4fb; font-size: 13px; }.composer input::placeholder { color: #77727f; }
 .add-button, .voice-button, .image-button, .send-button { border: 0; background: transparent; cursor: pointer; }
@@ -214,6 +222,11 @@ h1 { margin: 0; font-size: clamp(36px, 5vw, 59px); line-height: .98; letter-spac
 @media (max-width: 430px) {
   .landing-nav { padding:0 16px; }.landing-nav .text-button { display:none; }.landing-hero { padding:35px 16px 55px; gap:20px; }.hero-copy h1 { font-size:52px; }.hero-copy > p:not(.eyebrow) { font-size:14px; }.hero-actions { flex-direction:column; }.hero-graphic { transform:scale(.84); margin:-18px auto; }.feature-strip { padding:0 16px; }.landing-footer { flex-wrap:wrap; padding:22px 16px; }.theme-grid { grid-template-columns:1fr; }
   .lumi-wordmark { width:min(250px,78vw); }.lumi-wordmark.compact { width:94px; }.mode-pill { max-width:92px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.top-actions { gap:5px; }.memory-pill { padding:7px 8px; }.round-button { display: none; }.message > p,.message-content { max-width: 89%; }.message-content table { display: block; overflow-x: auto; }.thinking-card { min-height: 65px; }.thinking-copy > span { max-width: 185px; }
+}
+
+@media (max-width:560px) {
+  .attachment-chip { min-width:165px; }
+  .message-attachments { grid-template-columns:1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

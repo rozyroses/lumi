@@ -11,6 +11,8 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
     "@vitejs/plugin-react": "^5.0.0",
+    "mammoth": "^1.10.0",
+    "pdfjs-dist": "^5.4.54",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",

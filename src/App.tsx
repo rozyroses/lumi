@@ -6,7 +6,8 @@ import remarkGfm from "remark-gfm";
 import { createClient, type Session } from "@supabase/supabase-js";
 
 type Mode = "chat" | "learn" | "create";
-type Message = { role: "lumi" | "user"; text: string };
+type Attachment = { id: string; name: string; type: string; size: number; kind: "image" | "pdf" | "document" | "text"; dataUrl?: string; extractedText?: string; pageCount?: number };
+type Message = { role: "lumi" | "user"; text: string; attachments?: Attachment[] };
 type Chat = { id: string; title: string; mode: Mode; messages: Message[]; updatedAt: number; spaceId?: string; temporary?: boolean; pinned?: boolean; archived?: boolean };
 type Space = { id: string; name: string; description: string; instructions: string; color: "lavender" | "peach" | "mint"; updatedAt?: number };
 type Theme = "midnight" | "cloud" | "berry" | "forest";
@@ -25,6 +26,10 @@ const MEMORY_ON_KEY = "lumi-memory-enabled-v1";
 const CHAT_PREFS_KEY = "lumi-chat-preferences-v1";
 const ONBOARDING_KEY = "lumi-onboarding-v1";
 const GUEST_OWNER = "guest";
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const MAX_ATTACHMENT_TOTAL_BYTES = 12 * 1024 * 1024;
+const MAX_ATTACHMENTS = 4;
+const ACCEPTED_ATTACHMENTS = "image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain,text/csv,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const SUPABASE_URL = "https://yrammmjnviozydebshbd.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ecQn0VjaNhnsJR_Kys_Efg_z-CQvzin";
 const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -137,10 +142,55 @@ function LumiWordmark({ compact = false }: { compact?: boolean }) {
   );
 }
 
+function attachmentKind(file: File): Attachment["kind"] | null {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) return "pdf";
+  if (file.type.startsWith("text/") || /\.(txt|csv|md)$/i.test(file.name)) return "text";
+  if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || file.name.toLowerCase().endsWith(".docx")) return "document";
+  return null;
+}
+
+function readAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error || new Error("file could not be read"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function extractAttachment(file: File, kind: Attachment["kind"]): Promise<Pick<Attachment, "dataUrl" | "extractedText" | "pageCount">> {
+  if (kind === "image") return { dataUrl: await readAsDataUrl(file) };
+  if (kind === "text") return { extractedText: (await file.text()).slice(0, 80000) };
+  if (kind === "document") {
+    const mammoth = await import("mammoth/mammoth.browser");
+    const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+    return { extractedText: result.value.slice(0, 80000) };
+  }
+  const pdfjs = await import("pdfjs-dist");
+  pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/build/pdf.worker.min.mjs";
+  const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  const pages: string[] = [];
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+    const text = content.items.map((item) => "str" in item ? item.str : "").join(" ").replace(/\s+/g, " ").trim();
+    pages.push(`[page ${pageNumber}]\n${text}`);
+    if (pages.join("\n\n").length > 80000) break;
+  }
+  return { extractedText: pages.join("\n\n").slice(0, 80000), pageCount: pdf.numPages };
+}
+
+function formatBytes(bytes: number) {
+  return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 export default function Home() {
   const [screen, setScreen] = useState<"home" | "app">("home");
   const [mode, setMode] = useState<Mode>("chat");
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachmentsBusy, setAttachmentsBusy] = useState(false);
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -179,6 +229,7 @@ export default function Home() {
   const syncTimer = useRef<number | null>(null);
   const requestController = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const copy = modeCopy[mode];
   const activeChat = chats.find((chat) => chat.id === activeChatId);
   const isTemporary = Boolean(activeChat?.temporary);
@@ -603,7 +654,19 @@ export default function Home() {
         body: JSON.stringify({ mode, space: activeSpace ? { name: activeSpace.name, instructions: activeSpace.instructions } : null, messages: [
           { role: "user", content: COMPANION_GUIDE },
           ...(!isTemporary && memoryOn && memories.some((item) => item.status === "approved") ? [{ role: "user", content: `[background memory — use only when relevant; never mention this block unless asked]\n${memories.filter((item) => item.status === "approved" && (!item.spaceId || item.spaceId === activeSpaceId)).slice(-24).map((item) => `- ${item.text}`).join("\n")}` }] : []),
-          ...nextMessages.map((message) => ({ role: message.role === "lumi" ? "assistant" : "user", content: message.text }))
+          ...nextMessages.map((message) => {
+            const attachmentParts = message.attachments?.map((attachment) => attachment.kind === "image"
+              ? { type: "image_url", image_url: { url: attachment.dataUrl, detail: "auto" }, name: attachment.name }
+              : { type: "text", text: `[attachment: ${attachment.name}${attachment.pageCount ? ` · ${attachment.pageCount} pages` : ""}]\n${attachment.extractedText || "No readable text was found."}\n[end attachment — cite this filename${attachment.kind === "pdf" ? " and the provided page markers" : ""} when using it]` }) || [];
+            const hasImage = message.attachments?.some((attachment) => attachment.kind === "image");
+            const text = [message.text || "Please examine the attached file(s).", ...attachmentParts.filter((part) => part.type === "text").map((part) => part.text)].join("\n\n");
+            return {
+              role: message.role === "lumi" ? "assistant" : "user",
+              // Keep document-only requests compatible with the existing text gateway.
+              // Image requests use the multimodal shape accepted by the upgraded gateway.
+              content: hasImage ? [{ type: "text", text }, ...attachmentParts.filter((part) => part.type === "image_url")] : text,
+            };
+          })
         ] }),
       });
       const result = await response.json();
@@ -620,11 +683,41 @@ export default function Home() {
 
   async function submit(text = input) {
     const clean = text.trim();
-    if (!clean || isThinking) return;
-    const nextMessages: Message[] = [...messages, { role: "user", text: clean }];
+    if ((!clean && !attachments.length) || isThinking || attachmentsBusy) return;
+    const messageAttachments = attachments;
+    const messageText = clean || `please look at ${messageAttachments.length === 1 ? "this attachment" : "these attachments"}`;
+    const nextMessages: Message[] = [...messages, { role: "user", text: messageText, attachments: messageAttachments }];
     saveMemoriesFrom(clean);
-    updateActive(nextMessages); setInput("");
+    updateActive(nextMessages); setInput(""); setAttachments([]);
     await generateReply(nextMessages);
+  }
+
+  async function chooseAttachments(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = [...(event.target.files || [])];
+    event.target.value = "";
+    if (!files.length) return;
+    const room = MAX_ATTACHMENTS - attachments.length;
+    if (room <= 0) return showToast(`up to ${MAX_ATTACHMENTS} files per message ✦`);
+    const accepted: Attachment[] = [];
+    let totalBytes = attachments.reduce((sum, attachment) => sum + attachment.size, 0);
+    setAttachmentsBusy(true);
+    try {
+      for (const file of files.slice(0, room)) {
+        const kind = attachmentKind(file);
+        if (!kind) { showToast(`${file.name} isn’t a supported file type`); continue; }
+        if (file.size > MAX_ATTACHMENT_BYTES) { showToast(`${file.name} is over the 8 MB limit`); continue; }
+        if (totalBytes + file.size > MAX_ATTACHMENT_TOTAL_BYTES) { showToast("attachments can total up to 12 MB per message"); continue; }
+        try {
+          const content = await extractAttachment(file, kind);
+          accepted.push({ id: crypto.randomUUID(), name: file.name, type: file.type || "application/octet-stream", size: file.size, kind, ...content });
+          totalBytes += file.size;
+        } catch { showToast(`${file.name} couldn’t be read`); }
+      }
+      setAttachments((current) => [...current, ...accepted]);
+      if (files.length > room) showToast(`only the first ${room} file${room === 1 ? "" : "s"} fit`);
+    } finally {
+      setAttachmentsBusy(false);
+    }
   }
 
   function stopReply() { requestController.current?.abort(); showToast("generation stopped ✦"); }
@@ -794,7 +887,7 @@ export default function Home() {
                       </details>
                       <div className="message-actions"><button onClick={() => copyMessage(message.text)}>copy</button><button onClick={() => regenerateMessage(index)} disabled={isThinking}>regenerate</button></div>
                     </div>
-                  ) : <div className="user-bubble"><p>{message.text}</p><div className="message-actions"><button onClick={() => copyMessage(message.text)}>copy</button><button onClick={() => editUserMessage(index)} disabled={isThinking}>edit</button></div></div>}
+                  ) : <div className="user-bubble">{message.attachments?.length ? <div className="message-attachments">{message.attachments.map((attachment) => <div className="message-file" key={attachment.id}>{attachment.kind === "image" && attachment.dataUrl ? <img src={attachment.dataUrl} alt={attachment.name} /> : <span className={`file-icon ${attachment.kind}`}>{attachment.kind === "pdf" ? "PDF" : attachment.kind === "document" ? "DOC" : "TXT"}</span>}<span><strong>{attachment.name}</strong><small>{attachment.pageCount ? `${attachment.pageCount} pages · ` : ""}{formatBytes(attachment.size)}</small></span></div>)}</div> : null}<p>{message.text}</p><div className="message-actions"><button onClick={() => copyMessage(message.text)}>copy</button><button onClick={() => editUserMessage(index)} disabled={isThinking}>edit</button></div></div>}
                 </div>
               ))}
               {isThinking && (
@@ -817,8 +910,10 @@ export default function Home() {
           <div className="composer-wrap">
             {(!isOnline || chatError) && <div className="recovery-banner" role="alert"><span>{isOnline ? "↻" : "⌁"}</span><div><strong>{isOnline ? "Lumi hit a connection snag" : "you’re offline"}</strong><small>{chatError || "regular chats stay on this device until you reconnect."}</small></div>{lastFailedMessages && isOnline && <button onClick={() => void generateReply(lastFailedMessages)}>try again</button>}</div>}
             {isTemporary && <div className="temporary-notice"><span>◌</span><strong>temporary chat</strong> this conversation won’t be saved, synced, or used for memory.</div>}
+            {attachments.length > 0 && <div className="attachment-tray" aria-label="Selected attachments">{attachments.map((attachment) => <div className="attachment-chip" key={attachment.id}>{attachment.kind === "image" && attachment.dataUrl ? <img src={attachment.dataUrl} alt="" /> : <span>{attachment.kind === "pdf" ? "PDF" : attachment.kind === "document" ? "DOC" : "TXT"}</span>}<div><strong>{attachment.name}</strong><small>{attachment.pageCount ? `${attachment.pageCount} pages · ` : ""}{formatBytes(attachment.size)}</small></div><button type="button" onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))} aria-label={`Remove ${attachment.name}`}>×</button></div>)}</div>}
             <form className="composer" onSubmit={handleSubmit}>
-              <button type="button" className="add-button" onClick={() => showToast("file uploads are coming soon ✦")} aria-label="Add attachment">＋</button>
+              <input ref={fileInputRef} className="file-input" type="file" accept={ACCEPTED_ATTACHMENTS} multiple onChange={chooseAttachments} />
+              <button type="button" className="add-button" onClick={() => fileInputRef.current?.click()} aria-label="Add attachment" disabled={attachmentsBusy}>{attachmentsBusy ? "…" : "＋"}</button>
               <input
                 ref={inputRef}
                 value={input}
@@ -827,9 +922,9 @@ export default function Home() {
                 aria-label="Message Lumi"
               />
               <button type="button" className="voice-button" onClick={() => showToast("voice chat is coming soon ✦")} aria-label="Use voice">⌇</button>
-              {isThinking ? <button type="button" className="send-button stop" onClick={stopReply} aria-label="Stop generating">■</button> : <button type="submit" className="send-button" disabled={!input.trim()} aria-label="Send message">↑</button>}
+              {isThinking ? <button type="button" className="send-button stop" onClick={stopReply} aria-label="Stop generating">■</button> : <button type="submit" className="send-button" disabled={attachmentsBusy || (!input.trim() && !attachments.length)} aria-label="Send message">↑</button>}
             </form>
-            <p className="demo-note"><span>✦</span> lumi is powered by Meta during this private test</p>
+            <p className="demo-note"><span>✦</span> images, PDFs, Word, and text · up to 4 files, 8 MB each</p>
           </div>
         </div>
       </section>

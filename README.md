@@ -8,6 +8,8 @@ Lumi is a warm, grounded AI companion for talking things through, learning, crea
 
 - Chat, Learn, and Create modes
 - Companion-first support that can listen, think alongside the user, or help them act
+- Secure in-chat attachments for images, PDFs, Word documents, and text files
+- Image understanding plus filename- and page-aware answers for uploaded material
 - Personalized Spaces with custom instructions
 - Cross-device chats, Spaces, settings, and account-isolated data
 - Automatic, editable memory with contradiction-aware updates
@@ -25,6 +27,8 @@ Lumi is an AI, not a person or therapist. Its companion behavior is designed to 
 ## Privacy and accounts
 
 Lumi keeps signed-in browser data under each Supabase user ID, separates guest data, and clears the active account state during logout or account switching. Supabase row-level security protects cloud records per user. Temporary chats are not synced or used for memory.
+
+Attachments are processed for the current conversation and sent through Lumi's secured AI gateway. The client and gateway enforce supported file types, a four-file maximum, an 8 MB per-file limit, and a 12 MB combined image limit. Temporary-chat attachments are not synced.
 
 Never place an AI provider API key, service-role key, password, or other secret in this repository or browser-side code.
 
