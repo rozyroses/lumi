@@ -7,11 +7,11 @@ import { createClient, type Session } from "@supabase/supabase-js";
 
 type Mode = "chat" | "learn" | "create";
 type Message = { role: "lumi" | "user"; text: string };
-type Chat = { id: string; title: string; mode: Mode; messages: Message[]; updatedAt: number; spaceId?: string };
+type Chat = { id: string; title: string; mode: Mode; messages: Message[]; updatedAt: number; spaceId?: string; temporary?: boolean };
 type Space = { id: string; name: string; description: string; instructions: string; color: "lavender" | "peach" | "mint"; updatedAt?: number };
 type Theme = "midnight" | "cloud" | "berry" | "forest";
 type Profile = { id?: string; name: string; email: string };
-type Memory = { id: string; text: string; createdAt: number };
+type Memory = { id: string; text: string; createdAt: number; updatedAt: number; spaceId?: string; status: "pending" | "approved" };
 
 const CHATS_KEY = "lumi-chats-v1";
 const ACTIVE_CHAT_KEY = "lumi-active-chat-v1";
@@ -30,7 +30,7 @@ const DEFAULT_SPACES: Space[] = [
   { id: "big-dreams", name: "big dreams", description: "businesses, goals, and the wild ideas worth building", instructions: "Turn ambitious ideas into grounded next steps without shrinking the vision.", color: "mint" },
 ];
 const withSpaceTimestamp = (space: Space): Space => ({ ...space, updatedAt: space.updatedAt || 1 });
-const makeChat = (mode: Mode, spaceId?: string): Chat => ({ id: crypto.randomUUID(), title: "new adventure", mode, messages: [], updatedAt: Date.now(), spaceId });
+const makeChat = (mode: Mode, spaceId?: string, temporary = false): Chat => ({ id: crypto.randomUUID(), title: temporary ? "temporary chat" : "new adventure", mode, messages: [], updatedAt: Date.now(), spaceId, temporary });
 function mergeByFreshness<T extends { id: string; updatedAt?: number }>(local: T[], remote: T[]): T[] {
   const merged = new Map<string, T>();
   [...remote, ...local].forEach((item) => {
@@ -131,6 +131,7 @@ export default function Home() {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [memoryTab, setMemoryTab] = useState<"saved" | "review">("saved");
   const [themeOpen, setThemeOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -141,6 +142,7 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const copy = modeCopy[mode];
   const activeChat = chats.find((chat) => chat.id === activeChatId);
+  const isTemporary = Boolean(activeChat?.temporary);
   const messages = activeChat?.messages ?? [];
   const activeSpace = spaces.find((space) => space.id === activeSpaceId);
   const visibleChats = activeSpaceId ? chats.filter((chat) => chat.spaceId === activeSpaceId) : chats;
@@ -174,7 +176,8 @@ export default function Home() {
     try {
       setTheme((localStorage.getItem(THEME_KEY) as Theme) || "midnight");
       setProfile(JSON.parse(localStorage.getItem(PROFILE_KEY) || "null"));
-      setMemories(JSON.parse(localStorage.getItem(MEMORIES_KEY) || "[]"));
+      const savedMemories = JSON.parse(localStorage.getItem(MEMORIES_KEY) || "[]") as Partial<Memory>[];
+      setMemories(savedMemories.map((item) => ({ id: String(item.id), text: String(item.text), createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Number(item.createdAt) || Date.now(), spaceId: item.spaceId, status: item.status || "approved" })));
       setMemoryOn(localStorage.getItem(MEMORY_ON_KEY) !== "false");
     } catch { /* use defaults */ }
   }, []);
@@ -201,9 +204,10 @@ export default function Home() {
     let cancelled = false;
     async function connectCloud() {
       setSyncState("syncing");
-      const [{ data: cloudChats, error: chatError }, { data: cloudSpaces, error: spaceError }] = await Promise.all([
+      const [{ data: cloudChats, error: chatError }, { data: cloudSpaces, error: spaceError }, { data: cloudMemories, error: memoryError }] = await Promise.all([
         supabase.from("lumi_chats").select("id,title,mode,messages,updated_at,space_id").eq("user_id", profile!.id!),
         supabase.from("lumi_spaces").select("id,name,description,instructions,color,updated_at").eq("user_id", profile!.id!),
+        supabase.from("lumi_memories").select("id,text,status,space_id,created_at,updated_at").eq("user_id", profile!.id!),
       ]);
       if (cancelled) return;
       if (chatError || spaceError) {
@@ -215,6 +219,10 @@ export default function Home() {
       const remoteSpaces: Space[] = (cloudSpaces || []).map((row) => ({ id: row.id, name: row.name, description: row.description || "", instructions: row.instructions || "", color: row.color as Space["color"], updatedAt: new Date(row.updated_at).getTime() }));
       setChats((local) => mergeByFreshness(local, remoteChats));
       setSpaces((local) => mergeByFreshness(local.map(withSpaceTimestamp), remoteSpaces));
+      if (!memoryError) {
+        const remoteMemories: Memory[] = (cloudMemories || []).map((row) => ({ id: row.id, text: row.text, status: row.status as Memory["status"], spaceId: row.space_id || undefined, createdAt: new Date(row.created_at).getTime(), updatedAt: new Date(row.updated_at).getTime() }));
+        setMemories((local) => mergeByFreshness(local, remoteMemories));
+      }
       setCloudReady(true);
       setSyncState("synced");
     }
@@ -227,20 +235,23 @@ export default function Home() {
     if (syncTimer.current) window.clearTimeout(syncTimer.current);
     setSyncState("syncing");
     syncTimer.current = window.setTimeout(async () => {
-      const chatRows = chats.map((chat) => ({ id: chat.id, user_id: profile.id, title: chat.title, mode: chat.mode, messages: chat.messages, space_id: chat.spaceId || null, updated_at: new Date(chat.updatedAt).toISOString() }));
+      const chatRows = chats.filter((chat) => !chat.temporary).map((chat) => ({ id: chat.id, user_id: profile.id, title: chat.title, mode: chat.mode, messages: chat.messages, space_id: chat.spaceId || null, updated_at: new Date(chat.updatedAt).toISOString() }));
       const spaceRows = spaces.map((space) => ({ id: space.id, user_id: profile.id, name: space.name, description: space.description, instructions: space.instructions, color: space.color, updated_at: new Date(space.updatedAt || Date.now()).toISOString() }));
+      const memoryRows = memories.map((memory) => ({ id: memory.id, user_id: profile.id, text: memory.text, status: memory.status, space_id: memory.spaceId || null, created_at: new Date(memory.createdAt).toISOString(), updated_at: new Date(memory.updatedAt).toISOString() }));
       const results = await Promise.all([
         chatRows.length ? supabase.from("lumi_chats").upsert(chatRows) : Promise.resolve({ error: null }),
         spaceRows.length ? supabase.from("lumi_spaces").upsert(spaceRows) : Promise.resolve({ error: null }),
+        memoryRows.length ? supabase.from("lumi_memories").upsert(memoryRows) : Promise.resolve({ error: null }),
       ]);
       setSyncState(results.some((result) => result.error) ? "error" : "synced");
     }, 700);
     return () => { if (syncTimer.current) window.clearTimeout(syncTimer.current); };
-  }, [chats, spaces, profile?.id, cloudReady]);
+  }, [chats, spaces, memories, profile?.id, cloudReady]);
 
   useEffect(() => {
-    if (chats.length) localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
-    if (activeChatId) localStorage.setItem(ACTIVE_CHAT_KEY, activeChatId);
+    const durableChats = chats.filter((chat) => !chat.temporary);
+    if (durableChats.length) localStorage.setItem(CHATS_KEY, JSON.stringify(durableChats));
+    if (activeChatId && !activeChat?.temporary) localStorage.setItem(ACTIVE_CHAT_KEY, activeChatId);
   }, [chats, activeChatId]);
 
   useEffect(() => {
@@ -268,14 +279,32 @@ export default function Home() {
     setToast(message); window.setTimeout(() => setToast(""), 2600);
   }
 
-  function rememberFrom(text: string) {
-    if (!memoryOn) return;
+  function suggestMemoriesFrom(text: string) {
+    if (!memoryOn || isTemporary) return;
     const candidates = text.split(/[.!?\n]+/).map((part) => part.trim()).filter((part) => /^(i am|i'm|my |i like|i love|i prefer|i want|i need|call me|remember)/i.test(part) && part.length > 8 && part.length < 180);
     setMemories((current) => {
       const known = new Set(current.map((item) => item.text.toLowerCase()));
-      const additions = candidates.filter((item) => !known.has(item.toLowerCase())).slice(0, 3).map((item) => ({ id: crypto.randomUUID(), text: item, createdAt: Date.now() }));
+      const additions = candidates.filter((item) => !known.has(item.toLowerCase())).slice(0, 3).map((item): Memory => ({ id: crypto.randomUUID(), text: item, createdAt: Date.now(), updatedAt: Date.now(), spaceId: activeSpaceId || undefined, status: "pending" }));
       return [...current, ...additions].slice(-60);
     });
+  }
+
+  function updateMemory(memory: Memory) {
+    const text = window.prompt("edit what Lumi should remember", memory.text)?.trim();
+    if (!text) return;
+    setMemories((current) => current.map((item) => item.id === memory.id ? { ...item, text: text.slice(0, 240), updatedAt: Date.now() } : item));
+  }
+
+  function deleteMemory(memory: Memory) {
+    setMemories((current) => current.filter((item) => item.id !== memory.id));
+    if (profile?.id && cloudReady) void supabase.from("lumi_memories").delete().eq("id", memory.id).eq("user_id", profile.id);
+  }
+
+  function clearAllMemories() {
+    if (!window.confirm("clear everything Lumi remembers and every suggestion waiting for review?")) return;
+    setMemories([]);
+    if (profile?.id && cloudReady) void supabase.from("lumi_memories").delete().eq("user_id", profile.id);
+    showToast("Lumi memory cleared ✦");
   }
 
   function applySession(nextSession: Session | null) {
@@ -351,6 +380,13 @@ export default function Home() {
     setTimeout(() => inputRef.current?.focus(), 50);
   }
 
+  function startTemporaryChat() {
+    const next = makeChat(mode, activeSpaceId || undefined, true);
+    setChats((current) => [next, ...current]);
+    setActiveChatId(next.id); setInput(""); setSidebarOpen(false);
+    showToast("temporary chat started — nothing here will be saved ✦");
+  }
+
   function openChat(chat: Chat) { setActiveChatId(chat.id); setMode(chat.mode); setSidebarOpen(false); }
 
   function openSpace(space: Space) {
@@ -388,13 +424,13 @@ export default function Home() {
     const clean = text.trim();
     if (!clean || isThinking) return;
     const nextMessages: Message[] = [...messages, { role: "user", text: clean }];
-    rememberFrom(clean);
+    suggestMemoriesFrom(clean);
     updateActive(nextMessages); setInput(""); setIsThinking(true);
     try {
       const response = await fetch("https://luni-gateway.roosevelt-wooden.workers.dev/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode, space: activeSpace ? { name: activeSpace.name, instructions: activeSpace.instructions } : null, messages: [
-          ...(memoryOn && memories.length ? [{ role: "user", content: `[background memory — use only when relevant; never mention this block unless asked]\n${memories.slice(-24).map((item) => `- ${item.text}`).join("\n")}` }] : []),
+          ...(!isTemporary && memoryOn && memories.some((item) => item.status === "approved") ? [{ role: "user", content: `[background memory — use only when relevant; never mention this block unless asked]\n${memories.filter((item) => item.status === "approved" && (!item.spaceId || item.spaceId === activeSpaceId)).slice(-24).map((item) => `- ${item.text}`).join("\n")}` }] : []),
           ...nextMessages.map((message) => ({ role: message.role === "lumi" ? "assistant" : "user", content: message.text }))
         ] }),
       });
@@ -419,9 +455,9 @@ export default function Home() {
 
   const overlays = <>
     {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="modal-card auth-card" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}>×</button><p className="modal-kicker">lumi account</p><h2>{authMode === "signup" ? "make Lumi yours" : "welcome back"}</h2><p className="beta-note">real Supabase accounts are here. your password is handled securely and never stored by Lumi.</p>{authMode === "signup" && <label>your name<input name="name" defaultValue={profile?.name} required placeholder="what should lumi call you?" autoComplete="name" /></label>}<label>email<input name="email" type="email" defaultValue={profile?.email} required placeholder="you@example.com" autoComplete="email" /></label><label>password<input name="password" type="password" required minLength={6} placeholder="at least 6 characters" autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></label>{authError && <p className="auth-error" role="alert">{authError}</p>}<button className="modal-primary" disabled={authBusy}>{authBusy ? "one sec..." : authMode === "signup" ? "create account ✦" : "log in ✦"}</button><button type="button" className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthError(""); }}>{authMode === "signup" ? "already have an account? log in" : "new here? create an account"}</button></form></div>}
-    {memoryOpen && <div className="modal-backdrop" onMouseDown={() => setMemoryOpen(false)}><div className="modal-card memory-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setMemoryOpen(false)}>×</button><p className="modal-kicker">lumi memory</p><h2>what i remember</h2><div className="memory-control"><span><strong>use memory across chats</strong><small>only sends these notes when they can help</small></span><button className={memoryOn ? "toggle on" : "toggle"} onClick={() => setMemoryOn(!memoryOn)}><i /></button></div><div className="memory-list">{memories.length ? memories.map((memory) => <div className="memory-item" key={memory.id}><p>{memory.text}</p><button onClick={() => setMemories((current) => current.filter((item) => item.id !== memory.id))}>×</button></div>) : <div className="empty-memory">nothing saved yet. tell Lumi things naturally and useful details will appear here ✦</div>}</div>{memories.length > 0 && <button className="danger-link" onClick={() => window.confirm("clear everything Lumi remembers?") && setMemories([])}>clear all memory</button>}</div></div>}
+    {memoryOpen && <div className="modal-backdrop" onMouseDown={() => setMemoryOpen(false)}><div className="modal-card memory-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setMemoryOpen(false)}>×</button><p className="modal-kicker">lumi memory</p><h2>memory, with manners</h2><div className="memory-control"><span><strong>use memory across chats</strong><small>approved memories can help in future chats</small></span><button className={memoryOn ? "toggle on" : "toggle"} onClick={() => setMemoryOn(!memoryOn)}><i /></button></div><div className="memory-tabs"><button className={memoryTab === "saved" ? "active" : ""} onClick={() => setMemoryTab("saved")}>saved <span>{memories.filter((item) => item.status === "approved").length}</span></button><button className={memoryTab === "review" ? "active" : ""} onClick={() => setMemoryTab("review")}>review <span>{memories.filter((item) => item.status === "pending").length}</span></button></div><div className="memory-list">{memories.filter((item) => item.status === (memoryTab === "saved" ? "approved" : "pending")).length ? memories.filter((item) => item.status === (memoryTab === "saved" ? "approved" : "pending")).map((memory) => <div className="memory-item" key={memory.id}><div><p>{memory.text}</p><small>{memory.spaceId ? spaces.find((space) => space.id === memory.spaceId)?.name || "Space memory" : "all chats"}</small></div><div className="memory-actions">{memory.status === "pending" && <button className="approve" onClick={() => setMemories((current) => current.map((item) => item.id === memory.id ? { ...item, status: "approved", updatedAt: Date.now() } : item))}>save</button>}<button onClick={() => updateMemory(memory)} aria-label="Edit memory">✎</button><button onClick={() => deleteMemory(memory)} aria-label="Delete memory">×</button></div></div>) : <div className="empty-memory">{memoryTab === "review" ? "no suggestions waiting. Lumi will ask before remembering new details ✦" : "nothing saved yet. approved details will appear here ✦"}</div>}</div>{memories.length > 0 && <button className="danger-link" onClick={clearAllMemories}>clear all memory</button>}</div></div>}
     {themeOpen && <ThemePicker theme={theme} setTheme={setTheme} close={() => setThemeOpen(false)} />}
-    {settingsOpen && <div className="modal-backdrop" onMouseDown={() => setSettingsOpen(false)}><div className="modal-card settings-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setSettingsOpen(false)}>×</button><p className="modal-kicker">lumi settings</p><h2>make lumi feel like yours</h2><section className="settings-section"><h3>account</h3>{profile ? <><div className="account-summary"><span className="avatar">{profile.name[0]?.toLowerCase()}</span><span><strong>{profile.name}</strong><small>{profile.email}</small></span></div><div className={`sync-status ${syncState}`}><i />{syncState === "synced" ? "chats & Spaces saved to cloud" : syncState === "syncing" ? "saving to cloud..." : syncState === "error" ? "cloud setup needed" : "saved on this device"}</div><button className="settings-button" onClick={() => void logout()}>log out</button></> : <><p>log in to sync chats and Spaces across your devices.</p><div className="settings-actions"><button className="settings-button primary" onClick={() => { setSettingsOpen(false); openAuth("login"); }}>log in</button><button className="settings-button" onClick={() => { setSettingsOpen(false); openAuth("signup"); }}>sign up</button></div></>}</section><section className="settings-section"><h3>personalization</h3><button className="settings-row" onClick={() => { setSettingsOpen(false); setThemeOpen(true); }}><span><strong>theme</strong><small>{theme}</small></span><b>›</b></button><button className="settings-row" onClick={() => { setSettingsOpen(false); setMemoryOpen(true); }}><span><strong>memory</strong><small>{memoryOn ? `${memories.length} saved · on` : "off"}</small></span><b>›</b></button></section><section className="settings-section"><h3>data & privacy</h3><p>{profile ? "signed-in chats and Spaces sync securely. memories and theme stay on this device for now." : "your chats, Spaces, memories, and theme are stored on this device."}</p><button className="danger-button" onClick={clearLocalData}>clear data on this device</button></section></div></div>}
+    {settingsOpen && <div className="modal-backdrop" onMouseDown={() => setSettingsOpen(false)}><div className="modal-card settings-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setSettingsOpen(false)}>×</button><p className="modal-kicker">lumi settings</p><h2>make lumi feel like yours</h2><section className="settings-section"><h3>account</h3>{profile ? <><div className="account-summary"><span className="avatar">{profile.name[0]?.toLowerCase()}</span><span><strong>{profile.name}</strong><small>{profile.email}</small></span></div><div className={`sync-status ${syncState}`}><i />{syncState === "synced" ? "chats, Spaces & memory saved to cloud" : syncState === "syncing" ? "saving to cloud..." : syncState === "error" ? "cloud setup needed" : "saved on this device"}</div><button className="settings-button" onClick={() => void logout()}>log out</button></> : <><p>log in to sync chats, Spaces, and approved memories across your devices.</p><div className="settings-actions"><button className="settings-button primary" onClick={() => { setSettingsOpen(false); openAuth("login"); }}>log in</button><button className="settings-button" onClick={() => { setSettingsOpen(false); openAuth("signup"); }}>sign up</button></div></>}</section><section className="settings-section"><h3>personalization</h3><button className="settings-row" onClick={() => { setSettingsOpen(false); setThemeOpen(true); }}><span><strong>theme</strong><small>{theme}</small></span><b>›</b></button><button className="settings-row" onClick={() => { setSettingsOpen(false); setMemoryOpen(true); }}><span><strong>memory</strong><small>{memoryOn ? `${memories.filter((item) => item.status === "approved").length} saved · ${memories.filter((item) => item.status === "pending").length} to review` : "off"}</small></span><b>›</b></button></section><section className="settings-section"><h3>data & privacy</h3><p>{profile ? "regular chats, Spaces, and approved memories sync securely. temporary chats never save or become memory." : "regular chats and memories stay on this device. temporary chats disappear when you leave."}</p><button className="settings-button" onClick={() => { setSettingsOpen(false); startTemporaryChat(); }}>start a temporary chat</button><button className="danger-button" onClick={clearLocalData}>clear data on this device</button></section></div></div>}
   </>;
 
   if (screen === "home") return (
@@ -445,6 +481,7 @@ export default function Home() {
         <button className="new-button" onClick={() => startNewChat()}>
           <span>＋</span> new little adventure
         </button>
+        <button className="temporary-button" onClick={startTemporaryChat}><span>◌</span> temporary chat</button>
 
         <nav className="main-nav" aria-label="Main navigation">
           <p className="nav-label">playground</p>
@@ -495,7 +532,7 @@ export default function Home() {
         <div className="thinking-aurora" aria-hidden="true"><i /><i /><i /></div>
         <header className="topbar">
           <button className="menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open menu">☰</button>
-          <div className="mode-pill"><span className={`mode-gem ${mode}`} /> {activeSpace ? activeSpace.name : mode === "chat" ? "lumi chat" : `lumi ${mode}`}</div>
+          <div className={isTemporary ? "mode-pill temporary" : "mode-pill"}><span className={`mode-gem ${mode}`} /> {isTemporary ? "temporary chat" : activeSpace ? activeSpace.name : mode === "chat" ? "lumi chat" : `lumi ${mode}`}</div>
           <div className="top-actions">
             <button className={`memory-pill ${memoryOn ? "on" : ""}`} onClick={() => setMemoryOpen(true)}>
               <span>◉</span> memory {memoryOn ? "on" : "off"}
@@ -569,6 +606,7 @@ export default function Home() {
           )}
 
           <div className="composer-wrap">
+            {isTemporary && <div className="temporary-notice"><span>◌</span><strong>temporary chat</strong> this conversation won’t be saved, synced, or used for memory.</div>}
             <form className="composer" onSubmit={handleSubmit}>
               <button type="button" className="add-button" onClick={() => showToast("file uploads are coming soon ✦")} aria-label="Add attachment">＋</button>
               <input
