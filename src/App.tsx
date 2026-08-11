@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { createClient, type Session } from "@supabase/supabase-js";
+import { attachmentKind, durableChats, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENT_TOTAL_BYTES, MAX_ATTACHMENTS, storageKey } from "./safety";
 
 type Mode = "chat" | "learn" | "create";
 type Attachment = { id: string; name: string; type: string; size: number; kind: "image" | "pdf" | "document" | "text"; dataUrl?: string; extractedText?: string; pageCount?: number };
@@ -26,9 +27,6 @@ const MEMORY_ON_KEY = "lumi-memory-enabled-v1";
 const CHAT_PREFS_KEY = "lumi-chat-preferences-v1";
 const ONBOARDING_KEY = "lumi-onboarding-v1";
 const GUEST_OWNER = "guest";
-const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
-const MAX_ATTACHMENT_TOTAL_BYTES = 12 * 1024 * 1024;
-const MAX_ATTACHMENTS = 4;
 const ACCEPTED_ATTACHMENTS = "image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain,text/csv,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const SUPABASE_URL = "https://yrammmjnviozydebshbd.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ecQn0VjaNhnsJR_Kys_Efg_z-CQvzin";
@@ -39,7 +37,6 @@ const DEFAULT_SPACES: Space[] = [
   { id: "big-dreams", name: "big dreams", description: "businesses, goals, and the wild ideas worth building", instructions: "Turn ambitious ideas into grounded next steps without shrinking the vision.", color: "mint" },
 ];
 const withSpaceTimestamp = (space: Space): Space => ({ ...space, updatedAt: space.updatedAt || 1 });
-const storageKey = (key: string, ownerId: string) => `${key}:${ownerId}`;
 const makeChat = (mode: Mode, spaceId?: string, temporary = false): Chat => ({ id: crypto.randomUUID(), title: temporary ? "temporary chat" : "new adventure", mode, messages: [], updatedAt: Date.now(), spaceId, temporary });
 function mergeByFreshness<T extends { id: string; updatedAt?: number }>(local: T[], remote: T[]): T[] {
   const merged = new Map<string, T>();
@@ -140,14 +137,6 @@ function LumiWordmark({ compact = false }: { compact?: boolean }) {
       }}
     />
   );
-}
-
-function attachmentKind(file: File): Attachment["kind"] | null {
-  if (file.type.startsWith("image/")) return "image";
-  if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) return "pdf";
-  if (file.type.startsWith("text/") || /\.(txt|csv|md)$/i.test(file.name)) return "text";
-  if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || file.name.toLowerCase().endsWith(".docx")) return "document";
-  return null;
 }
 
 function readAsDataUrl(file: File) {
@@ -346,7 +335,7 @@ export default function Home() {
     if (syncTimer.current) window.clearTimeout(syncTimer.current);
     setSyncState("syncing");
     syncTimer.current = window.setTimeout(async () => {
-      const chatRows = chats.filter((chat) => !chat.temporary).map((chat) => ({ id: chat.id, user_id: profile.id, title: chat.title, mode: chat.mode, messages: chat.messages, space_id: chat.spaceId || null, updated_at: new Date(chat.updatedAt).toISOString() }));
+      const chatRows = durableChats(chats).map((chat) => ({ id: chat.id, user_id: profile.id, title: chat.title, mode: chat.mode, messages: chat.messages, space_id: chat.spaceId || null, updated_at: new Date(chat.updatedAt).toISOString() }));
       const spaceRows = spaces.map((space) => ({ id: space.id, user_id: profile.id, name: space.name, description: space.description, instructions: space.instructions, color: space.color, updated_at: new Date(space.updatedAt || Date.now()).toISOString() }));
       const memoryRows = memories.map((memory) => ({ id: memory.id, user_id: profile.id, text: memory.text, status: memory.status, space_id: memory.spaceId || null, created_at: new Date(memory.createdAt).toISOString(), updated_at: new Date(memory.updatedAt).toISOString() }));
       const results = await Promise.all([
@@ -360,9 +349,9 @@ export default function Home() {
   }, [chats, spaces, memories, profile?.id, cloudReady]);
 
   useEffect(() => {
-    const durableChats = chats.filter((chat) => !chat.temporary);
+    const chatsToPersist = durableChats(chats);
     if (!dataOwnerId || !localDataReady) return;
-    localStorage.setItem(storageKey(CHATS_KEY, dataOwnerId), JSON.stringify(durableChats));
+    localStorage.setItem(storageKey(CHATS_KEY, dataOwnerId), JSON.stringify(chatsToPersist));
     if (activeChatId && !activeChat?.temporary) localStorage.setItem(storageKey(ACTIVE_CHAT_KEY, dataOwnerId), activeChatId);
   }, [chats, activeChatId, dataOwnerId, localDataReady]);
 
@@ -758,7 +747,7 @@ export default function Home() {
       <nav className="landing-nav"><LumiWordmark compact /><div>{profile ? <button className="text-button" onClick={() => setScreen("app")}>open lumi</button> : <><button className="text-button" onClick={() => openAuth("login")}>log in</button><button className="text-button" onClick={() => openAuth("signup")}>sign up</button></>}<button className="landing-cta" onClick={() => setScreen("app")}>try lumi ✦</button></div></nav>
       <section className="landing-hero"><div className="hero-copy"><p className="eyebrow"><span /> an ai companion that meets you where you are</p><h1>you bring the moment.<br/><em>we’ll meet it together.</em></h1><p>talk things through, learn, create, or find your next step—with support that adapts to you without taking over.</p><div className="hero-actions"><button className="landing-cta large" onClick={() => setScreen("app")}>talk to lumi <span>↗</span></button><button className="hero-demo" onClick={() => setScreen("app")}><i>▶</i> see how lumi helps</button></div><div className="trust-row"><span>✦ remembers with permission</span><span>◌ private temporary chats</span><span>⌁ you stay in control</span></div></div><div className="hero-graphic"><div className="hero-halo"/><span className="orbit orbit-one">“just listen for a minute”</span><span className="orbit orbit-two">“think this through with me”</span><span className="orbit orbit-three">“help me take one step”</span><img className="hero-avatar" src="/lumi/lumi-avatar.png" alt="Lumi, your AI companion"/><div className="hero-status"><i/><span><strong>lumi is here</strong><small>ready to listen, think, or help you move</small></span></div></div></section>
       <section className="home-marquee" aria-label="Ways to use Lumi"><span>chat through it ✦</span><span>study smarter ✦</span><span>make something wild ✦</span><span>plan the next move ✦</span></section>
-      <section className="feature-strip"><article className="feature-memory"><span>01 / CONTEXT</span><h2>continuity,<br/>not surveillance.</h2><p>your goals, preferences, and projects can follow you across chats—always visible, editable, and yours to erase.</p><div className="mini-memory"><i>✦</i><span><strong>tour wardrobe</strong><small>Bijou · music ideas</small></span><b>remembered</b></div></article><article className="feature-mood"><span>02 / PRESENCE</span><h2>the room meets<br/>the moment.</h2><p>the living background responds gently to the conversation while your chosen theme stays yours.</p><div className="mood-dots"><i/><i/><i/><i/><i/><i/></div></article><article className="feature-think"><span>03 / SUPPORT</span><h2>listen, think,<br/>then move.</h2><p>Lumi can make room for the feeling, reason beside you, or help turn it into one grounded next step.</p><div className="mini-thinking"><LumiMark small thinking/><span><strong>thinking beside you</strong><small>supporting without taking over</small></span></div></article></section>
+      <section className="feature-strip"><article className="feature-memory"><span>01 / CONTEXT</span><h2>continuity,<br/>not surveillance.</h2><p>your goals, preferences, and projects can follow you across chats—always visible, editable, and yours to erase.</p><div className="mini-memory"><i>✦</i><span><strong>tour wardrobe</strong><small>Bijou · music ideas</small></span><b>remembered</b></div></article><article className="feature-mood"><span>02 / PRESENCE</span><h2>the room meets<br/>the moment.</h2><p>the living background responds gently to the conversation while your chosen theme stays yours.</p><div className="mood-dots"><i/><i/><i/><i/><i/><i/></div></article><article className="feature-think"><span>03 / SUPPORT</span><h2>listen, think,<br/>then move.</h2><p>Lumi can make room for the feeling, reason beside you, or help turn it into one grounded next step.</p><div className="mini-thinking"><LumiMark small thinking/><span><strong>finding our next step</strong><small>supporting without taking over</small></span></div></article></section>
       <footer className="landing-footer"><LumiWordmark compact /><p>made for curious people with a lot going on.</p><button className="text-button" onClick={() => setThemeOpen(true)}>change the mood ◐</button></footer>
       {overlays}
     </main>
@@ -894,13 +883,11 @@ export default function Home() {
                 <div className="message lumi thinking-message">
                   <LumiMark small thinking />
                   <div className="thinking-card" role="status" aria-live="polite">
-                    <div className="thinking-orb"><span>✦</span><i/><i/></div>
                     <div className="thinking-copy">
                       <strong>{thinkingStages[thinkingStage].label}</strong>
                       <span>{thinkingStages[thinkingStage].detail}</span>
-                      <div className="thinking-track" aria-hidden="true"><i style={{ width: `${((thinkingStage + 1) / thinkingStages.length) * 100}%` }} /></div>
                     </div>
-                    <span className="thinking-dots"><i /><i /><i /></span>
+                    <span className="thinking-dots" aria-hidden="true"><i /><i /><i /></span>
                   </div>
                 </div>
               )}
