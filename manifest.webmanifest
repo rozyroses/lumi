@@ -1,0 +1,13 @@
+{
+  "name": "Lumi AI",
+  "short_name": "Lumi",
+  "description": "Your bright little AI brain for learning, creating, and life.",
+  "start_url": "/lumi/",
+  "scope": "/lumi/",
+  "display": "standalone",
+  "background_color": "#121017",
+  "theme_color": "#8f70ff",
+  "icons": [
+    { "src": "/lumi/lumi-logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

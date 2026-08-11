@@ -11,6 +11,27 @@
   --mint: #82e0c2;
 }
 
+/* app-quality controls */
+.account-card { width:min(520px,100%); }
+.account-form { display:grid; grid-template-columns:1fr auto; gap:8px; margin-bottom:9px; }
+.account-form input { min-width:0; padding:10px 12px; border:1px solid var(--line); border-radius:11px; background:rgba(255,255,255,.045); color:var(--ink); outline:none; }
+.account-form input:focus { border-color:rgba(183,166,255,.48); }
+.account-card .settings-section > .settings-button + .danger-button,.account-card .settings-section > .settings-button + .settings-button { margin-top:8px; }
+.user-bubble { max-width:min(78%,720px); }
+.user-bubble > p { max-width:none; margin:0; }
+.message-actions { display:flex; gap:5px; margin-top:8px; opacity:.46; transition:opacity .2s ease; }
+.message:hover .message-actions,.message:focus-within .message-actions { opacity:1; }
+.message-actions button { padding:4px 7px; border:1px solid var(--hairline); border-radius:7px; background:rgba(255,255,255,.035); color:var(--muted); font-size:8px; font-weight:750; cursor:pointer; }
+.message-actions button:hover { color:var(--ink); background:rgba(255,255,255,.08); }
+.message.user .message-actions { justify-content:flex-end; }
+.send-button.stop { background:#ff8ea1; color:#30151b; }
+
+@media (max-width: 560px) {
+  .account-form { grid-template-columns:1fr; }
+  .user-bubble { max-width:89%; }
+  .message-actions { opacity:.72; }
+}
+
 [data-theme="cloud"] { --ink:#292334; --muted:#70687b; --panel:#f6f0ff; --panel-2:#fffafd; --line:rgba(67,49,84,.12); --lavender:#8a6fe8; --violet:#6d50dc; }
 [data-theme="berry"] { --lavender:#ff8bd1; --violet:#d64b9e; --peach:#ff9f7e; --mint:#a9efcf; }
 [data-theme="forest"] { --lavender:#74e2b6; --violet:#26a879; --peach:#ffd07d; --mint:#74e2b6; }

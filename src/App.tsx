@@ -135,6 +135,9 @@ export default function Home() {
   const [memoryTab, setMemoryTab] = useState<"saved" | "review">("saved");
   const [themeOpen, setThemeOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountBusy, setAccountBusy] = useState(false);
+  const [accountError, setAccountError] = useState("");
   const [chatSearch, setChatSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -142,6 +145,7 @@ export default function Home() {
   const [cloudReady, setCloudReady] = useState(false);
   const [syncState, setSyncState] = useState<"device" | "syncing" | "synced" | "error">("device");
   const syncTimer = useRef<number | null>(null);
+  const requestController = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const copy = modeCopy[mode];
   const activeChat = chats.find((chat) => chat.id === activeChatId);
@@ -414,6 +418,45 @@ export default function Home() {
     setScreen("home"); setSidebarOpen(false); showToast("logged out safely ✦");
   }
 
+  async function sendPasswordReset() {
+    if (!profile?.email) return;
+    setAccountBusy(true); setAccountError("");
+    const { error } = await supabase.auth.resetPasswordForEmail(profile.email, { redirectTo: `${window.location.origin}/lumi/` });
+    setAccountBusy(false);
+    if (error) setAccountError(error.message);
+    else showToast("password reset email sent ✦");
+  }
+
+  async function changeEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const email = String(new FormData(event.currentTarget).get("email") || "").trim();
+    if (!email) return;
+    setAccountBusy(true); setAccountError("");
+    const { error } = await supabase.auth.updateUser({ email }, { emailRedirectTo: `${window.location.origin}/lumi/` });
+    setAccountBusy(false);
+    if (error) setAccountError(error.message);
+    else showToast("check both inboxes to confirm your new email ✦");
+  }
+
+  function exportMyData() {
+    const payload = { exportedAt: new Date().toISOString(), profile, chats: chats.filter((chat) => !chat.temporary), spaces, memories, preferences: { theme, memoryOn } };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url; link.download = `lumi-data-${new Date().toISOString().slice(0, 10)}.json`; link.click();
+    URL.revokeObjectURL(url); showToast("your Lumi data is downloaded ✦");
+  }
+
+  async function deleteAccount() {
+    if (!profile?.id || !window.confirm("permanently delete your Lumi account and cloud data? this cannot be undone.")) return;
+    if (window.prompt("type DELETE to confirm") !== "DELETE") return;
+    setAccountBusy(true); setAccountError("");
+    const { error } = await supabase.rpc("delete_lumi_account");
+    setAccountBusy(false);
+    if (error) { setAccountError("account deletion is not available yet. your account was not changed."); return; }
+    [CHATS_KEY, ACTIVE_CHAT_KEY, SPACES_KEY, ACTIVE_SPACE_KEY, THEME_KEY, PROFILE_KEY, MEMORIES_KEY, MEMORY_ON_KEY, CHAT_PREFS_KEY].forEach((key) => localStorage.removeItem(key));
+    setAccountOpen(false); setSettingsOpen(false); setProfile(null); setScreen("home"); showToast("your Lumi account was deleted");
+  }
+
   function openAuth(nextMode: "login" | "signup") {
     setAuthMode(nextMode);
     setAuthError("");
@@ -477,15 +520,14 @@ export default function Home() {
     if (profile?.id && cloudReady) void supabase.from("lumi_chats").delete().eq("id", chat.id).eq("user_id", profile.id);
   }
 
-  async function submit(text = input) {
-    const clean = text.trim();
-    if (!clean || isThinking) return;
-    const nextMessages: Message[] = [...messages, { role: "user", text: clean }];
-    saveMemoriesFrom(clean);
-    updateActive(nextMessages); setInput(""); setIsThinking(true);
+  async function generateReply(nextMessages: Message[]) {
+    requestController.current?.abort();
+    const controller = new AbortController();
+    requestController.current = controller;
+    setIsThinking(true);
     try {
       const response = await fetch("https://luni-gateway.roosevelt-wooden.workers.dev/chat", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
         body: JSON.stringify({ mode, space: activeSpace ? { name: activeSpace.name, instructions: activeSpace.instructions } : null, messages: [
           ...(!isTemporary && memoryOn && memories.some((item) => item.status === "approved") ? [{ role: "user", content: `[background memory — use only when relevant; never mention this block unless asked]\n${memories.filter((item) => item.status === "approved" && (!item.spaceId || item.spaceId === activeSpaceId)).slice(-24).map((item) => `- ${item.text}`).join("\n")}` }] : []),
           ...nextMessages.map((message) => ({ role: message.role === "lumi" ? "assistant" : "user", content: message.text }))
@@ -495,9 +537,34 @@ export default function Home() {
       if (!response.ok || typeof result.reply !== "string") throw new Error(result.error || "Lumi could not answer.");
       updateActive([...nextMessages, { role: "lumi", text: result.reply }]);
     } catch (error) {
-      console.error("Lumi chat request failed", error);
-      updateActive([...nextMessages, { role: "lumi", text: "my brain connection hiccupped for a second. try that again in a moment ✦" }]);
-    } finally { setIsThinking(false); }
+      if ((error as Error).name !== "AbortError") {
+        console.error("Lumi chat request failed", error);
+        updateActive([...nextMessages, { role: "lumi", text: "my brain connection hiccupped for a second. try that again in a moment ✦" }]);
+      }
+    } finally { requestController.current = null; setIsThinking(false); }
+  }
+
+  async function submit(text = input) {
+    const clean = text.trim();
+    if (!clean || isThinking) return;
+    const nextMessages: Message[] = [...messages, { role: "user", text: clean }];
+    saveMemoriesFrom(clean);
+    updateActive(nextMessages); setInput("");
+    await generateReply(nextMessages);
+  }
+
+  function stopReply() { requestController.current?.abort(); showToast("generation stopped ✦"); }
+  function copyMessage(text: string) { void navigator.clipboard.writeText(text).then(() => showToast("copied ✦")); }
+  function regenerateMessage(index: number) {
+    const base = messages.slice(0, index);
+    if (!base.length || base[base.length - 1]?.role !== "user") return;
+    updateActive(base); void generateReply(base);
+  }
+  function editUserMessage(index: number) {
+    const edited = window.prompt("edit your message", messages[index].text)?.trim();
+    if (!edited) return;
+    const base: Message[] = [...messages.slice(0, index), { role: "user", text: edited }];
+    updateActive(base); void generateReply(base);
   }
 
   function handleSubmit(event: FormEvent) {
@@ -514,7 +581,8 @@ export default function Home() {
     {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="modal-card auth-card" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}>×</button><p className="modal-kicker">lumi account</p><h2>{authMode === "signup" ? "make Lumi yours" : "welcome back"}</h2><p className="beta-note">real Supabase accounts are here. your password is handled securely and never stored by Lumi.</p>{authMode === "signup" && <label>your name<input name="name" defaultValue={profile?.name} required placeholder="what should lumi call you?" autoComplete="name" /></label>}<label>email<input name="email" type="email" defaultValue={profile?.email} required placeholder="you@example.com" autoComplete="email" /></label><label>password<input name="password" type="password" required minLength={6} placeholder="at least 6 characters" autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></label>{authError && <p className="auth-error" role="alert">{authError}</p>}<button className="modal-primary" disabled={authBusy}>{authBusy ? "one sec..." : authMode === "signup" ? "create account ✦" : "log in ✦"}</button><button type="button" className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthError(""); }}>{authMode === "signup" ? "already have an account? log in" : "new here? create an account"}</button></form></div>}
     {memoryOpen && <div className="modal-backdrop" onMouseDown={() => setMemoryOpen(false)}><div className="modal-card memory-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setMemoryOpen(false)}>×</button><p className="modal-kicker">lumi memory</p><h2>memory, with manners</h2><div className="memory-control"><span><strong>use memory across chats</strong><small>approved memories can help in future chats</small></span><button className={memoryOn ? "toggle on" : "toggle"} onClick={() => setMemoryOn(!memoryOn)}><i /></button></div><div className="memory-tabs"><button className={memoryTab === "saved" ? "active" : ""} onClick={() => setMemoryTab("saved")}>saved <span>{memories.filter((item) => item.status === "approved").length}</span></button><button className={memoryTab === "review" ? "active" : ""} onClick={() => setMemoryTab("review")}>review <span>{memories.filter((item) => item.status === "pending").length}</span></button></div><div className="memory-list">{memories.filter((item) => item.status === (memoryTab === "saved" ? "approved" : "pending")).length ? memories.filter((item) => item.status === (memoryTab === "saved" ? "approved" : "pending")).map((memory) => <div className="memory-item" key={memory.id}><div><p>{memory.text}</p><small>{memory.spaceId ? spaces.find((space) => space.id === memory.spaceId)?.name || "Space memory" : "all chats"}</small></div><div className="memory-actions">{memory.status === "pending" && <button className="approve" onClick={() => setMemories((current) => current.map((item) => item.id === memory.id ? { ...item, status: "approved", updatedAt: Date.now() } : item))}>save</button>}<button onClick={() => updateMemory(memory)} aria-label="Edit memory">✎</button><button onClick={() => deleteMemory(memory)} aria-label="Delete memory">×</button></div></div>) : <div className="empty-memory">{memoryTab === "review" ? "no suggestions waiting. Lumi will ask before remembering new details ✦" : "nothing saved yet. approved details will appear here ✦"}</div>}</div>{memories.length > 0 && <button className="danger-link" onClick={clearAllMemories}>clear all memory</button>}</div></div>}
     {themeOpen && <ThemePicker theme={theme} setTheme={chooseTheme} close={() => setThemeOpen(false)} />}
-    {settingsOpen && <div className="modal-backdrop" onMouseDown={() => setSettingsOpen(false)}><div className="modal-card settings-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setSettingsOpen(false)}>×</button><p className="modal-kicker">lumi settings</p><h2>make lumi feel like yours</h2><section className="settings-section"><h3>account</h3>{profile ? <><div className="account-summary"><span className="avatar">{profile.name[0]?.toLowerCase()}</span><span><strong>{profile.name}</strong><small>{profile.email}</small></span></div><div className={`sync-status ${syncState}`}><i />{syncState === "synced" ? "chats, Spaces & memory saved to cloud" : syncState === "syncing" ? "saving to cloud..." : syncState === "error" ? "cloud setup needed" : "saved on this device"}</div><button className="settings-button" onClick={() => void logout()}>log out</button></> : <><p>log in to sync chats, Spaces, and approved memories across your devices.</p><div className="settings-actions"><button className="settings-button primary" onClick={() => { setSettingsOpen(false); openAuth("login"); }}>log in</button><button className="settings-button" onClick={() => { setSettingsOpen(false); openAuth("signup"); }}>sign up</button></div></>}</section><section className="settings-section"><h3>personalization</h3><button className="settings-row" onClick={() => { setSettingsOpen(false); setThemeOpen(true); }}><span><strong>theme</strong><small>{theme}</small></span><b>›</b></button><button className="settings-row" onClick={() => { setSettingsOpen(false); setMemoryOpen(true); }}><span><strong>memory</strong><small>{memoryOn ? `${memories.filter((item) => item.status === "approved").length} saved · ${memories.filter((item) => item.status === "pending").length} to review` : "off"}</small></span><b>›</b></button></section><section className="settings-section"><h3>data & privacy</h3><p>{profile ? "regular chats, Spaces, and approved memories sync securely. temporary chats never save or become memory." : "regular chats and memories stay on this device. temporary chats disappear when you leave."}</p><button className="settings-button" onClick={() => { setSettingsOpen(false); startTemporaryChat(); }}>start a temporary chat</button><button className="danger-button" onClick={clearLocalData}>clear data on this device</button></section></div></div>}
+    {accountOpen && <div className="modal-backdrop" onMouseDown={() => setAccountOpen(false)}><div className="modal-card account-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setAccountOpen(false)}>×</button><p className="modal-kicker">account & security</p><h2>you’re in control</h2><section className="settings-section"><h3>email</h3><form className="account-form" onSubmit={changeEmail}><input name="email" type="email" defaultValue={profile?.email} required aria-label="New email" /><button className="settings-button primary" disabled={accountBusy}>change email</button></form><button className="settings-button" disabled={accountBusy} onClick={() => void sendPasswordReset()}>send password reset email</button></section><section className="settings-section"><h3>your data</h3><button className="settings-button" onClick={exportMyData}>download my data</button><button className="danger-button" disabled={accountBusy} onClick={() => void deleteAccount()}>permanently delete account</button>{accountError && <p className="auth-error" role="alert">{accountError}</p>}</section></div></div>}
+    {settingsOpen && <div className="modal-backdrop" onMouseDown={() => setSettingsOpen(false)}><div className="modal-card settings-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setSettingsOpen(false)}>×</button><p className="modal-kicker">lumi settings</p><h2>make lumi feel like yours</h2><section className="settings-section"><h3>account</h3>{profile ? <><div className="account-summary"><span className="avatar">{profile.name[0]?.toLowerCase()}</span><span><strong>{profile.name}</strong><small>{profile.email}</small></span></div><div className={`sync-status ${syncState}`}><i />{syncState === "synced" ? "chats, Spaces & memory saved to cloud" : syncState === "syncing" ? "saving to cloud..." : syncState === "error" ? "cloud setup needed" : "saved on this device"}</div><div className="settings-actions"><button className="settings-button primary" onClick={() => { setSettingsOpen(false); setAccountOpen(true); }}>manage account</button><button className="settings-button" onClick={() => void logout()}>log out</button></div></> : <><p>log in to sync chats, Spaces, and approved memories across your devices.</p><div className="settings-actions"><button className="settings-button primary" onClick={() => { setSettingsOpen(false); openAuth("login"); }}>log in</button><button className="settings-button" onClick={() => { setSettingsOpen(false); openAuth("signup"); }}>sign up</button></div></>}</section><section className="settings-section"><h3>personalization</h3><button className="settings-row" onClick={() => { setSettingsOpen(false); setThemeOpen(true); }}><span><strong>theme</strong><small>{theme}</small></span><b>›</b></button><button className="settings-row" onClick={() => { setSettingsOpen(false); setMemoryOpen(true); }}><span><strong>memory</strong><small>{memoryOn ? `${memories.filter((item) => item.status === "approved").length} saved · ${memories.filter((item) => item.status === "pending").length} to review` : "off"}</small></span><b>›</b></button></section><section className="settings-section"><h3>data & privacy</h3><p>{profile ? "regular chats, Spaces, and approved memories sync securely. temporary chats never save or become memory." : "regular chats and memories stay on this device. temporary chats disappear when you leave."}</p><button className="settings-button" onClick={() => { setSettingsOpen(false); startTemporaryChat(); }}>start a temporary chat</button><button className="danger-button" onClick={clearLocalData}>clear data on this device</button></section></div></div>}
   </>;
 
   if (screen === "home") return (
@@ -645,8 +713,9 @@ export default function Home() {
                         <summary>how lumi approached this</summary>
                         <p>i used the recent conversation, adapted the answer for {activeChat?.mode ?? mode} mode, and organized it to be easier to act on. this is a short process summary—not private hidden reasoning.</p>
                       </details>
+                      <div className="message-actions"><button onClick={() => copyMessage(message.text)}>copy</button><button onClick={() => regenerateMessage(index)} disabled={isThinking}>regenerate</button></div>
                     </div>
-                  ) : <p>{message.text}</p>}
+                  ) : <div className="user-bubble"><p>{message.text}</p><div className="message-actions"><button onClick={() => copyMessage(message.text)}>copy</button><button onClick={() => editUserMessage(index)} disabled={isThinking}>edit</button></div></div>}
                 </div>
               ))}
               {isThinking && (
@@ -678,7 +747,7 @@ export default function Home() {
                 aria-label="Message Lumi"
               />
               <button type="button" className="voice-button" onClick={() => showToast("voice chat is coming soon ✦")} aria-label="Use voice">⌇</button>
-              <button type="submit" className="send-button" disabled={!input.trim() || isThinking} aria-label="Send message">↑</button>
+              {isThinking ? <button type="button" className="send-button stop" onClick={stopReply} aria-label="Stop generating">■</button> : <button type="submit" className="send-button" disabled={!input.trim()} aria-label="Send message">↑</button>}
             </form>
             <p className="demo-note"><span>✦</span> lumi is powered by Meta during this private test</p>
           </div>
