@@ -7,7 +7,7 @@ import { createClient, type Session } from "@supabase/supabase-js";
 
 type Mode = "chat" | "learn" | "create";
 type Message = { role: "lumi" | "user"; text: string };
-type Chat = { id: string; title: string; mode: Mode; messages: Message[]; updatedAt: number; spaceId?: string; temporary?: boolean };
+type Chat = { id: string; title: string; mode: Mode; messages: Message[]; updatedAt: number; spaceId?: string; temporary?: boolean; pinned?: boolean; archived?: boolean };
 type Space = { id: string; name: string; description: string; instructions: string; color: "lavender" | "peach" | "mint"; updatedAt?: number };
 type Theme = "midnight" | "cloud" | "berry" | "forest";
 type Profile = { id?: string; name: string; email: string };
@@ -21,6 +21,7 @@ const THEME_KEY = "lumi-theme-v1";
 const PROFILE_KEY = "lumi-profile-v1";
 const MEMORIES_KEY = "lumi-memories-v1";
 const MEMORY_ON_KEY = "lumi-memory-enabled-v1";
+const CHAT_PREFS_KEY = "lumi-chat-preferences-v1";
 const SUPABASE_URL = "https://yrammmjnviozydebshbd.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ecQn0VjaNhnsJR_Kys_Efg_z-CQvzin";
 const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -134,6 +135,8 @@ export default function Home() {
   const [memoryTab, setMemoryTab] = useState<"saved" | "review">("saved");
   const [themeOpen, setThemeOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chatSearch, setChatSearch] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [localDataReady, setLocalDataReady] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
@@ -145,14 +148,22 @@ export default function Home() {
   const isTemporary = Boolean(activeChat?.temporary);
   const messages = activeChat?.messages ?? [];
   const activeSpace = spaces.find((space) => space.id === activeSpaceId);
-  const visibleChats = activeSpaceId ? chats.filter((chat) => chat.spaceId === activeSpaceId) : chats;
+  const searchNeedle = chatSearch.trim().toLowerCase();
+  const visibleChats = chats.filter((chat) => {
+    if (chat.temporary || Boolean(chat.archived) !== showArchived) return false;
+    if (activeSpaceId && chat.spaceId !== activeSpaceId) return false;
+    if (!searchNeedle) return true;
+    return chat.title.toLowerCase().includes(searchNeedle) || chat.messages.some((message) => message.text.toLowerCase().includes(searchNeedle));
+  });
 
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(CHATS_KEY) || "[]") as Chat[];
+      const preferences = JSON.parse(localStorage.getItem(CHAT_PREFS_KEY) || "{}") as Record<string, { pinned?: boolean; archived?: boolean }>;
+      const restored = saved.map((chat) => ({ ...chat, ...preferences[chat.id] }));
       if (saved.length) {
-        const selected = saved.find((chat) => chat.id === localStorage.getItem(ACTIVE_CHAT_KEY)) ?? saved[0];
-        setChats(saved); setActiveChatId(selected.id); setMode(selected.mode);
+        const selected = restored.find((chat) => chat.id === localStorage.getItem(ACTIVE_CHAT_KEY)) ?? restored.find((chat) => !chat.archived) ?? restored[0];
+        setChats(restored); setActiveChatId(selected.id); setMode(selected.mode);
       } else {
         const first = makeChat("chat"); setChats([first]); setActiveChatId(first.id);
       }
@@ -185,6 +196,13 @@ export default function Home() {
   useEffect(() => { localStorage.setItem(THEME_KEY, theme); }, [theme]);
   useEffect(() => { localStorage.setItem(MEMORIES_KEY, JSON.stringify(memories)); }, [memories]);
   useEffect(() => { localStorage.setItem(MEMORY_ON_KEY, String(memoryOn)); }, [memoryOn]);
+  useEffect(() => {
+    if (profile?.id) saveCloudPreferences(theme, memoryOn);
+  }, [theme, memoryOn, profile?.id]);
+  useEffect(() => {
+    const preferences = Object.fromEntries(chats.filter((chat) => chat.pinned || chat.archived).map((chat) => [chat.id, { pinned: chat.pinned, archived: chat.archived }]));
+    localStorage.setItem(CHAT_PREFS_KEY, JSON.stringify(preferences));
+  }, [chats]);
 
   useEffect(() => {
     try {
@@ -325,8 +343,40 @@ export default function Home() {
       name: String(nextSession.user.user_metadata?.name || nextSession.user.email?.split("@")[0] || "explorer"),
       email: nextSession.user.email || "",
     };
+    const metadata = nextSession.user.user_metadata || {};
+    if (metadata.lumi_theme) setTheme(metadata.lumi_theme as Theme);
+    if (typeof metadata.lumi_memory_on === "boolean") setMemoryOn(metadata.lumi_memory_on);
+    if (metadata.lumi_chat_preferences && typeof metadata.lumi_chat_preferences === "object") {
+      const preferences = metadata.lumi_chat_preferences as Record<string, { pinned?: boolean; archived?: boolean }>;
+      setChats((current) => current.map((chat) => ({ ...chat, ...preferences[chat.id] })));
+      localStorage.setItem(CHAT_PREFS_KEY, JSON.stringify(preferences));
+    }
     setProfile(nextProfile);
     localStorage.setItem(PROFILE_KEY, JSON.stringify(nextProfile));
+  }
+
+  function saveCloudPreferences(nextTheme = theme, nextMemoryOn = memoryOn, nextChats = chats) {
+    if (!profile?.id) return;
+    const chatPreferences = Object.fromEntries(nextChats.filter((chat) => chat.pinned || chat.archived).map((chat) => [chat.id, { pinned: chat.pinned, archived: chat.archived }]));
+    void supabase.auth.updateUser({ data: { lumi_theme: nextTheme, lumi_memory_on: nextMemoryOn, lumi_chat_preferences: chatPreferences } });
+  }
+
+  function chooseTheme(nextTheme: Theme) {
+    setTheme(nextTheme);
+    saveCloudPreferences(nextTheme, memoryOn);
+  }
+
+  function toggleMemory() {
+    const next = !memoryOn;
+    setMemoryOn(next);
+    saveCloudPreferences(theme, next);
+  }
+
+  function updateChatPreference(chat: Chat, patch: Pick<Chat, "pinned" | "archived">) {
+    const next = chats.map((item) => item.id === chat.id ? { ...item, ...patch, updatedAt: Date.now() } : item);
+    setChats(next);
+    saveCloudPreferences(theme, memoryOn, next);
+    if (patch.archived && chat.id === activeChatId) startNewChat();
   }
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
@@ -372,7 +422,7 @@ export default function Home() {
 
   function clearLocalData() {
     if (!window.confirm("clear chats, spaces, memories, and Lumi settings from this device?")) return;
-    [CHATS_KEY, ACTIVE_CHAT_KEY, SPACES_KEY, ACTIVE_SPACE_KEY, THEME_KEY, MEMORIES_KEY, MEMORY_ON_KEY].forEach((key) => localStorage.removeItem(key));
+    [CHATS_KEY, ACTIVE_CHAT_KEY, SPACES_KEY, ACTIVE_SPACE_KEY, THEME_KEY, MEMORIES_KEY, MEMORY_ON_KEY, CHAT_PREFS_KEY].forEach((key) => localStorage.removeItem(key));
     const first = makeChat("chat");
     setChats([first]); setActiveChatId(first.id); setSpaces(DEFAULT_SPACES); setActiveSpaceId(null);
     setMemories([]); setMemoryOn(true); setTheme("midnight"); setSettingsOpen(false);
@@ -463,7 +513,7 @@ export default function Home() {
   const overlays = <>
     {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="modal-card auth-card" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}>×</button><p className="modal-kicker">lumi account</p><h2>{authMode === "signup" ? "make Lumi yours" : "welcome back"}</h2><p className="beta-note">real Supabase accounts are here. your password is handled securely and never stored by Lumi.</p>{authMode === "signup" && <label>your name<input name="name" defaultValue={profile?.name} required placeholder="what should lumi call you?" autoComplete="name" /></label>}<label>email<input name="email" type="email" defaultValue={profile?.email} required placeholder="you@example.com" autoComplete="email" /></label><label>password<input name="password" type="password" required minLength={6} placeholder="at least 6 characters" autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></label>{authError && <p className="auth-error" role="alert">{authError}</p>}<button className="modal-primary" disabled={authBusy}>{authBusy ? "one sec..." : authMode === "signup" ? "create account ✦" : "log in ✦"}</button><button type="button" className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthError(""); }}>{authMode === "signup" ? "already have an account? log in" : "new here? create an account"}</button></form></div>}
     {memoryOpen && <div className="modal-backdrop" onMouseDown={() => setMemoryOpen(false)}><div className="modal-card memory-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setMemoryOpen(false)}>×</button><p className="modal-kicker">lumi memory</p><h2>memory, with manners</h2><div className="memory-control"><span><strong>use memory across chats</strong><small>approved memories can help in future chats</small></span><button className={memoryOn ? "toggle on" : "toggle"} onClick={() => setMemoryOn(!memoryOn)}><i /></button></div><div className="memory-tabs"><button className={memoryTab === "saved" ? "active" : ""} onClick={() => setMemoryTab("saved")}>saved <span>{memories.filter((item) => item.status === "approved").length}</span></button><button className={memoryTab === "review" ? "active" : ""} onClick={() => setMemoryTab("review")}>review <span>{memories.filter((item) => item.status === "pending").length}</span></button></div><div className="memory-list">{memories.filter((item) => item.status === (memoryTab === "saved" ? "approved" : "pending")).length ? memories.filter((item) => item.status === (memoryTab === "saved" ? "approved" : "pending")).map((memory) => <div className="memory-item" key={memory.id}><div><p>{memory.text}</p><small>{memory.spaceId ? spaces.find((space) => space.id === memory.spaceId)?.name || "Space memory" : "all chats"}</small></div><div className="memory-actions">{memory.status === "pending" && <button className="approve" onClick={() => setMemories((current) => current.map((item) => item.id === memory.id ? { ...item, status: "approved", updatedAt: Date.now() } : item))}>save</button>}<button onClick={() => updateMemory(memory)} aria-label="Edit memory">✎</button><button onClick={() => deleteMemory(memory)} aria-label="Delete memory">×</button></div></div>) : <div className="empty-memory">{memoryTab === "review" ? "no suggestions waiting. Lumi will ask before remembering new details ✦" : "nothing saved yet. approved details will appear here ✦"}</div>}</div>{memories.length > 0 && <button className="danger-link" onClick={clearAllMemories}>clear all memory</button>}</div></div>}
-    {themeOpen && <ThemePicker theme={theme} setTheme={setTheme} close={() => setThemeOpen(false)} />}
+    {themeOpen && <ThemePicker theme={theme} setTheme={chooseTheme} close={() => setThemeOpen(false)} />}
     {settingsOpen && <div className="modal-backdrop" onMouseDown={() => setSettingsOpen(false)}><div className="modal-card settings-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setSettingsOpen(false)}>×</button><p className="modal-kicker">lumi settings</p><h2>make lumi feel like yours</h2><section className="settings-section"><h3>account</h3>{profile ? <><div className="account-summary"><span className="avatar">{profile.name[0]?.toLowerCase()}</span><span><strong>{profile.name}</strong><small>{profile.email}</small></span></div><div className={`sync-status ${syncState}`}><i />{syncState === "synced" ? "chats, Spaces & memory saved to cloud" : syncState === "syncing" ? "saving to cloud..." : syncState === "error" ? "cloud setup needed" : "saved on this device"}</div><button className="settings-button" onClick={() => void logout()}>log out</button></> : <><p>log in to sync chats, Spaces, and approved memories across your devices.</p><div className="settings-actions"><button className="settings-button primary" onClick={() => { setSettingsOpen(false); openAuth("login"); }}>log in</button><button className="settings-button" onClick={() => { setSettingsOpen(false); openAuth("signup"); }}>sign up</button></div></>}</section><section className="settings-section"><h3>personalization</h3><button className="settings-row" onClick={() => { setSettingsOpen(false); setThemeOpen(true); }}><span><strong>theme</strong><small>{theme}</small></span><b>›</b></button><button className="settings-row" onClick={() => { setSettingsOpen(false); setMemoryOpen(true); }}><span><strong>memory</strong><small>{memoryOn ? `${memories.filter((item) => item.status === "approved").length} saved · ${memories.filter((item) => item.status === "pending").length} to review` : "off"}</small></span><b>›</b></button></section><section className="settings-section"><h3>data & privacy</h3><p>{profile ? "regular chats, Spaces, and approved memories sync securely. temporary chats never save or become memory." : "regular chats and memories stay on this device. temporary chats disappear when you leave."}</p><button className="settings-button" onClick={() => { setSettingsOpen(false); startTemporaryChat(); }}>start a temporary chat</button><button className="danger-button" onClick={clearLocalData}>clear data on this device</button></section></div></div>}
   </>;
 
@@ -505,17 +555,21 @@ export default function Home() {
         </nav>
 
         <section className="history">
-          <p className="nav-label">recent adventures</p>
+          <div className="history-heading"><p className="nav-label">{showArchived ? "archived adventures" : "recent adventures"}</p><button onClick={() => setShowArchived(!showArchived)}>{showArchived ? "recent" : "archive"}</button></div>
+          <label className="chat-search"><span>⌕</span><input value={chatSearch} onChange={(event) => setChatSearch(event.target.value)} placeholder="search chats" aria-label="Search chats" /></label>
           <div className="history-list">
-            {[...visibleChats].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8).map((chat) => (
+            {[...visibleChats].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt - a.updatedAt).slice(0, 20).map((chat) => (
               <div className={chat.id === activeChatId ? "history-row active" : "history-row"} key={chat.id}>
                 <button className="history-open" onClick={() => openChat(chat)}>
-                  <span className={`history-gem ${chat.mode}`} /><span>{chat.title}</span>
+                  <span className={`history-gem ${chat.mode}`} /><span>{chat.title}</span>{chat.pinned && <b className="pin-mark">◆</b>}
                 </button>
+                <button className="history-action" onClick={() => updateChatPreference(chat, { pinned: !chat.pinned })} aria-label={chat.pinned ? `Unpin ${chat.title}` : `Pin ${chat.title}`}>◇</button>
+                <button className="history-action" onClick={() => updateChatPreference(chat, { archived: !chat.archived, pinned: false })} aria-label={chat.archived ? `Restore ${chat.title}` : `Archive ${chat.title}`}>{chat.archived ? "↩" : "⌄"}</button>
                 <button className="history-action" onClick={() => renameChat(chat)} aria-label={`Rename ${chat.title}`}>✎</button>
                 <button className="history-action delete" onClick={() => deleteChat(chat)} aria-label={`Delete ${chat.title}`}>×</button>
               </div>
             ))}
+            {!visibleChats.length && <p className="history-empty">{chatSearch ? "no chats match that search" : showArchived ? "nothing archived yet" : "no recent chats yet"}</p>}
           </div>
         </section>
 
