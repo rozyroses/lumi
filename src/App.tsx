@@ -58,6 +58,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [memoryOn, setMemoryOn] = useState(true);
+  const [isThinking, setIsThinking] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const copy = modeCopy[mode];
 
@@ -70,28 +71,57 @@ export default function Home() {
     localStorage.setItem("lumi-demo-messages", JSON.stringify(messages));
   }, [messages]);
 
-  function submit(text = input) {
+  async function submit(text = input) {
     const clean = text.trim();
-    if (!clean) return;
-    setMessages((old) => [
-      ...old,
-      { role: "user", text: clean },
-      {
-        role: "lumi",
-        text:
-          mode === "learn"
-            ? `okay, let’s learn “${clean}” together. first, tell me what you already know—even if it’s just a tiny bit.`
-            : mode === "create"
-              ? `oh, i see the vision. let’s turn “${clean}” into something real. what feeling should people get first?`
-              : `i’m with you. let’s work through “${clean}” one clear step at a time. what would a win look like today?`,
-      },
-    ]);
+    if (!clean || isThinking) return;
+
+    const nextMessages: Message[] = [...messages, { role: "user", text: clean }];
+    setMessages(nextMessages);
     setInput("");
+    setIsThinking(true);
+
+    try {
+      const response = await fetch(
+        "https://luni-gateway.roosevelt-wooden.workers.dev/chat",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode,
+            messages: nextMessages.map((message) => ({
+              role: message.role === "lumi" ? "assistant" : "user",
+              content: message.text,
+            })),
+          }),
+        },
+      );
+
+      const result = await response.json();
+      if (!response.ok || typeof result.reply !== "string") {
+        throw new Error(result.error || "Lumi could not answer.");
+      }
+
+      setMessages((current) => [
+        ...current,
+        { role: "lumi", text: result.reply },
+      ]);
+    } catch (error) {
+      console.error("Lumi chat request failed", error);
+      setMessages((current) => [
+        ...current,
+        {
+          role: "lumi",
+          text: "my brain connection hiccupped for a second. try that again in a moment ✦",
+        },
+      ]);
+    } finally {
+      setIsThinking(false);
+    }
   }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    submit();
+    void submit();
   }
 
   function changeMode(next: Mode) {
@@ -189,6 +219,12 @@ export default function Home() {
                   <p>{message.text}</p>
                 </div>
               ))}
+              {isThinking && (
+                <div className="message lumi">
+                  <LumiMark small />
+                  <p>thinking… ✦</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -203,9 +239,9 @@ export default function Home() {
                 aria-label="Message Lumi"
               />
               <button type="button" className="voice-button" aria-label="Use voice">⌇</button>
-              <button type="submit" className="send-button" disabled={!input.trim()} aria-label="Send message">↑</button>
+              <button type="submit" className="send-button" disabled={!input.trim() || isThinking} aria-label="Send message">↑</button>
             </form>
-            <p className="demo-note"><span>✦</span> lumi is still learning — this is our playful little prototype</p>
+            <p className="demo-note"><span>✦</span> lumi is powered by Meta during this private test</p>
           </div>
         </div>
       </section>
