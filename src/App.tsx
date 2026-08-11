@@ -6,12 +6,18 @@ import remarkGfm from "remark-gfm";
 
 type Mode = "chat" | "learn" | "create";
 type Message = { role: "lumi" | "user"; text: string };
-type ProgressStage = "understanding your request" | "making a plan" | "writing the response";
 type Chat = { id: string; title: string; mode: Mode; messages: Message[]; updatedAt: number };
 
 const CHATS_KEY = "lumi-chats-v1";
 const ACTIVE_CHAT_KEY = "lumi-active-chat-v1";
 const makeChat = (mode: Mode): Chat => ({ id: crypto.randomUUID(), title: "new adventure", mode, messages: [], updatedAt: Date.now() });
+
+const thinkingStages = [
+  { label: "reading the room", detail: "getting the context and what you actually need" },
+  { label: "making a plan", detail: "choosing the clearest way to help" },
+  { label: "connecting the dots", detail: "checking the details and shaping the answer" },
+  { label: "writing it out", detail: "turning the plan into something useful" },
+];
 
 const navItems = [
   { id: "chat", icon: "✦", label: "Chat" },
@@ -60,6 +66,14 @@ function LumiMark({ small = false }: { small?: boolean }) {
   );
 }
 
+function LumiWordmark({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={compact ? "lumi-wordmark compact" : "lumi-wordmark"} aria-label="lumi">
+      <span>l</span><span>u</span><span>m</span><span className="logo-i">i<i /></span>
+    </div>
+  );
+}
+
 export default function Home() {
   const [mode, setMode] = useState<Mode>("chat");
   const [input, setInput] = useState("");
@@ -68,7 +82,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [memoryOn, setMemoryOn] = useState(true);
   const [isThinking, setIsThinking] = useState(false);
-  const [progressStage, setProgressStage] = useState<ProgressStage>("understanding your request");
+  const [thinkingStage, setThinkingStage] = useState(0);
   const [toast, setToast] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const copy = modeCopy[mode];
@@ -93,6 +107,14 @@ export default function Home() {
     if (chats.length) localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
     if (activeChatId) localStorage.setItem(ACTIVE_CHAT_KEY, activeChatId);
   }, [chats, activeChatId]);
+
+  useEffect(() => {
+    if (!isThinking) { setThinkingStage(0); return; }
+    const timer = window.setInterval(() => {
+      setThinkingStage((current) => Math.min(current + 1, thinkingStages.length - 1));
+    }, 1700);
+    return () => window.clearInterval(timer);
+  }, [isThinking]);
 
   function updateActive(nextMessages: Message[]) {
     setChats((current) => current.map((chat) => chat.id === activeChatId ? {
@@ -131,9 +153,7 @@ export default function Home() {
     const clean = text.trim();
     if (!clean || isThinking) return;
     const nextMessages: Message[] = [...messages, { role: "user", text: clean }];
-    updateActive(nextMessages); setInput(""); setIsThinking(true); setProgressStage("understanding your request");
-    const planTimer = window.setTimeout(() => setProgressStage("making a plan"), 650);
-    const writingTimer = window.setTimeout(() => setProgressStage("writing the response"), 1500);
+    updateActive(nextMessages); setInput(""); setIsThinking(true);
     try {
       const response = await fetch("https://luni-gateway.roosevelt-wooden.workers.dev/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -145,9 +165,7 @@ export default function Home() {
     } catch (error) {
       console.error("Lumi chat request failed", error);
       updateActive([...nextMessages, { role: "lumi", text: "my brain connection hiccupped for a second. try that again in a moment ✦" }]);
-    } finally {
-      window.clearTimeout(planTimer); window.clearTimeout(writingTimer); setIsThinking(false);
-    }
+    } finally { setIsThinking(false); }
   }
 
   function handleSubmit(event: FormEvent) {
@@ -161,11 +179,10 @@ export default function Home() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell mode-${mode} ${isThinking ? "is-thinking" : ""}`}>
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="brand-row">
-          <LumiMark small />
-          <span className="brand-name">lumi</span>
+          <LumiWordmark compact />
           <button className="close-menu" onClick={() => setSidebarOpen(false)} aria-label="Close menu">×</button>
         </div>
 
@@ -221,6 +238,7 @@ export default function Home() {
       {sidebarOpen && <button className="scrim" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />}
 
       <section className="workspace">
+        <div className="thinking-aurora" aria-hidden="true"><i /><i /><i /></div>
         <header className="topbar">
           <button className="menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open menu">☰</button>
           <div className="mode-pill"><span className={`mode-gem ${mode}`} /> {mode === "chat" ? "lumi chat" : `lumi ${mode}`}</div>
@@ -235,11 +253,7 @@ export default function Home() {
         <div className="content">
           {messages.length === 0 ? (
             <div className="welcome">
-              <div className="mascot-wrap">
-                <span className="orbit-dot one" />
-                <span className="orbit-dot two" />
-                <LumiMark />
-              </div>
+              <div className="hero-logo"><LumiWordmark /><span className="logo-tag">your bright little brain</span></div>
               <p className="eyebrow">{copy.eyebrow}</p>
               <h1>{copy.title}</h1>
               <p className="subtitle">{copy.subtitle}</p>
@@ -262,26 +276,33 @@ export default function Home() {
                   {message.role === "lumi" && <LumiMark small />}
                   {message.role === "lumi" ? (
                     <div className="message-content">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          a: ({ children, ...props }) => <a {...props} target="_blank" rel="noreferrer">{children}</a>,
+                        }}
+                      >
+                        {message.text}
+                      </ReactMarkdown>
                       <details className="approach-note">
                         <summary>how lumi approached this</summary>
-                        <p>{mode === "learn"
-                          ? "i organized the explanation around the main idea, useful examples, and a clear next step."
-                          : mode === "create"
-                            ? "i shaped your idea into a focused creative direction with practical next moves."
-                            : "i focused on what you asked, the most useful context, and a clear answer you can act on."}</p>
+                        <p>i used the recent conversation, adapted the answer for {activeChat?.mode ?? mode} mode, and organized it to be easier to act on. this is a short process summary—not private hidden reasoning.</p>
                       </details>
                     </div>
                   ) : <p>{message.text}</p>}
                 </div>
               ))}
               {isThinking && (
-                <div className="message lumi">
+                <div className="message lumi thinking-message">
                   <LumiMark small />
-                  <div className="thinking-card">
-                    <span className="thinking-spark">✦</span>
-                    <span>{progressStage}</span>
-                    <span className="thinking-dots" aria-hidden="true"><i /><i /><i /></span>
+                  <div className="thinking-card" role="status" aria-live="polite">
+                    <div className="thinking-orb"><span>✦</span></div>
+                    <div className="thinking-copy">
+                      <strong>{thinkingStages[thinkingStage].label}</strong>
+                      <span>{thinkingStages[thinkingStage].detail}</span>
+                      <div className="thinking-track" aria-hidden="true"><i style={{ width: `${((thinkingStage + 1) / thinkingStages.length) * 100}%` }} /></div>
+                    </div>
+                    <span className="thinking-dots"><i /><i /><i /></span>
                   </div>
                 </div>
               )}
