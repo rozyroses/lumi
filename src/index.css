@@ -394,3 +394,16 @@ h1 { margin: 0; font-size: clamp(36px, 5vw, 59px); line-height: .98; letter-spac
   .memory-pill { display:none; }
   .message > p,.message-content { max-width:89%; }
 }
+
+
+/* companion chat bubble + thinking presence */
+.user-bubble{width:fit-content;max-width:min(72%,680px);display:flex;flex-direction:column;align-items:flex-end;gap:7px}
+.user-bubble>p{width:fit-content;max-width:100%;margin:0;padding:11px 15px;border:1px solid color-mix(in srgb,var(--accent) 48%,transparent);border-radius:19px 7px 19px 19px;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 88%,white),color-mix(in srgb,var(--accent) 65%,var(--mood-b)));color:var(--accent-ink);box-shadow:0 8px 22px color-mix(in srgb,var(--accent) 12%,transparent),inset 0 1px 0 rgba(255,255,255,.32);font-size:12px;font-weight:650;line-height:1.55;overflow-wrap:anywhere}
+.user-bubble .message-actions{justify-content:flex-end;margin-top:0;padding-right:4px}
+.thinking-card{width:fit-content;max-width:min(430px,calc(100% - 44px));min-height:50px;padding:9px 15px;gap:14px;border-color:color-mix(in srgb,var(--mood-a) 30%,var(--stroke));border-radius:7px 18px 18px 18px;background:color-mix(in srgb,var(--chrome) 84%,transparent);box-shadow:0 12px 34px rgba(0,0,0,.14),0 0 24px color-mix(in srgb,var(--mood-a) 9%,transparent)}
+.thinking-orb,.thinking-track{display:none}
+.thinking-dots{display:inline-flex;align-items:center;gap:4px;padding-left:2px}
+.thinking-dots i{width:5px;height:5px;background:var(--mood-a);box-shadow:0 0 9px color-mix(in srgb,var(--mood-a) 65%,transparent);animation:companion-pulse 1.35s ease-in-out infinite}
+.thinking-dots i:nth-child(2){animation-delay:.18s}.thinking-dots i:nth-child(3){animation-delay:.36s}
+@keyframes companion-pulse{0%,70%,100%{transform:translateY(0) scale(.72);opacity:.38}35%{transform:translateY(-3px) scale(1);opacity:1}}
+@media(max-width:560px){.user-bubble{max-width:88%}.thinking-card{min-height:50px;max-width:calc(100% - 44px)}}
