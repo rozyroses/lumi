@@ -89,7 +89,7 @@ function LumiWordmark({ compact = false }: { compact?: boolean }) {
   return (
     <img
       className={compact ? "lumi-wordmark compact" : "lumi-wordmark"}
-      src="/lumi/lumi-logo.png"
+      src="lumi-logo.png"
       alt="lumi"
     />
   );
@@ -118,6 +118,7 @@ export default function Home() {
   const [authError, setAuthError] = useState("");
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const copy = modeCopy[mode];
@@ -262,6 +263,21 @@ export default function Home() {
     setScreen("home"); setSidebarOpen(false); showToast("logged out safely ✦");
   }
 
+  function openAuth(nextMode: "login" | "signup") {
+    setAuthMode(nextMode);
+    setAuthError("");
+    setAuthOpen(true);
+  }
+
+  function clearLocalData() {
+    if (!window.confirm("clear chats, spaces, memories, and Lumi settings from this device?")) return;
+    [CHATS_KEY, ACTIVE_CHAT_KEY, SPACES_KEY, ACTIVE_SPACE_KEY, THEME_KEY, MEMORIES_KEY, MEMORY_ON_KEY].forEach((key) => localStorage.removeItem(key));
+    const first = makeChat("chat");
+    setChats([first]); setActiveChatId(first.id); setSpaces(DEFAULT_SPACES); setActiveSpaceId(null);
+    setMemories([]); setMemoryOn(true); setTheme("midnight"); setSettingsOpen(false);
+    showToast("device data cleared ✦");
+  }
+
   function startNewChat(nextMode: Mode = mode) {
     const existing = chats.find((chat) => chat.messages.length === 0 && chat.mode === nextMode && chat.spaceId === (activeSpaceId || undefined));
     if (existing) setActiveChatId(existing.id);
@@ -339,11 +355,12 @@ export default function Home() {
     {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="modal-card auth-card" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}>×</button><p className="modal-kicker">lumi account</p><h2>{authMode === "signup" ? "make Lumi yours" : "welcome back"}</h2><p className="beta-note">real Supabase accounts are here. your password is handled securely and never stored by Lumi.</p>{authMode === "signup" && <label>your name<input name="name" defaultValue={profile?.name} required placeholder="what should lumi call you?" autoComplete="name" /></label>}<label>email<input name="email" type="email" defaultValue={profile?.email} required placeholder="you@example.com" autoComplete="email" /></label><label>password<input name="password" type="password" required minLength={6} placeholder="at least 6 characters" autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></label>{authError && <p className="auth-error" role="alert">{authError}</p>}<button className="modal-primary" disabled={authBusy}>{authBusy ? "one sec..." : authMode === "signup" ? "create account ✦" : "log in ✦"}</button><button type="button" className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthError(""); }}>{authMode === "signup" ? "already have an account? log in" : "new here? create an account"}</button></form></div>}
     {memoryOpen && <div className="modal-backdrop" onMouseDown={() => setMemoryOpen(false)}><div className="modal-card memory-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setMemoryOpen(false)}>×</button><p className="modal-kicker">lumi memory</p><h2>what i remember</h2><div className="memory-control"><span><strong>use memory across chats</strong><small>only sends these notes when they can help</small></span><button className={memoryOn ? "toggle on" : "toggle"} onClick={() => setMemoryOn(!memoryOn)}><i /></button></div><div className="memory-list">{memories.length ? memories.map((memory) => <div className="memory-item" key={memory.id}><p>{memory.text}</p><button onClick={() => setMemories((current) => current.filter((item) => item.id !== memory.id))}>×</button></div>) : <div className="empty-memory">nothing saved yet. tell Lumi things naturally and useful details will appear here ✦</div>}</div>{memories.length > 0 && <button className="danger-link" onClick={() => window.confirm("clear everything Lumi remembers?") && setMemories([])}>clear all memory</button>}</div></div>}
     {themeOpen && <ThemePicker theme={theme} setTheme={setTheme} close={() => setThemeOpen(false)} />}
+    {settingsOpen && <div className="modal-backdrop" onMouseDown={() => setSettingsOpen(false)}><div className="modal-card settings-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setSettingsOpen(false)}>×</button><p className="modal-kicker">lumi settings</p><h2>make lumi feel like yours</h2><section className="settings-section"><h3>account</h3>{profile ? <><div className="account-summary"><span className="avatar">{profile.name[0]?.toLowerCase()}</span><span><strong>{profile.name}</strong><small>{profile.email}</small></span></div><button className="settings-button" onClick={() => void logout()}>log out</button></> : <><p>log in to keep your Lumi account connected, or make a new one.</p><div className="settings-actions"><button className="settings-button primary" onClick={() => { setSettingsOpen(false); openAuth("login"); }}>log in</button><button className="settings-button" onClick={() => { setSettingsOpen(false); openAuth("signup"); }}>sign up</button></div></>}</section><section className="settings-section"><h3>personalization</h3><button className="settings-row" onClick={() => { setSettingsOpen(false); setThemeOpen(true); }}><span><strong>theme</strong><small>{theme}</small></span><b>›</b></button><button className="settings-row" onClick={() => { setSettingsOpen(false); setMemoryOpen(true); }}><span><strong>memory</strong><small>{memoryOn ? `${memories.length} saved · on` : "off"}</small></span><b>›</b></button></section><section className="settings-section"><h3>data & privacy</h3><p>your current chats, Spaces, memories, and theme are still stored on this device.</p><button className="danger-button" onClick={clearLocalData}>clear data on this device</button></section></div></div>}
   </>;
 
   if (screen === "home") return (
     <main className="landing" data-theme={theme}>
-      <nav className="landing-nav"><LumiWordmark compact /><div><button className="text-button" onClick={() => setAuthOpen(true)}>log in</button><button className="landing-cta" onClick={() => setScreen("app")}>try lumi ✦</button></div></nav>
+      <nav className="landing-nav"><LumiWordmark compact /><div>{profile ? <button className="text-button" onClick={() => setScreen("app")}>open lumi</button> : <><button className="text-button" onClick={() => openAuth("login")}>log in</button><button className="text-button" onClick={() => openAuth("signup")}>sign up</button></>}<button className="landing-cta" onClick={() => setScreen("app")}>try lumi ✦</button></div></nav>
       <section className="landing-hero"><div className="hero-copy"><p className="eyebrow">your bright little brain</p><h1>an ai that gets to know <em>you.</em></h1><p>lumi helps you think, learn, create, and keep life moving—without making you start over in every new chat.</p><div className="hero-actions"><button className="landing-cta large" onClick={() => setScreen("app")}>start a little adventure ↗</button><button className="text-button" onClick={() => setAuthOpen(true)}>i already have a profile</button></div></div><div className="hero-graphic"><span className="orbit orbit-one">learn</span><span className="orbit orbit-two">create</span><span className="orbit orbit-three">remember</span><div className="hero-orb"><b>✦</b><small>hey, i’m lumi</small></div></div></section>
       <section className="feature-strip"><article><span>01</span><h2>memory, with manners</h2><p>Lumi remembers the useful stuff across chats. see it, edit it, pause it, or wipe it.</p></article><article><span>02</span><h2>three ways to think</h2><p>chat through life, learn at your pace, or build the thing living in your head.</p></article><article><span>03</span><h2>your vibe, too</h2><p>switch themes whenever the mood changes. the personality stays Lumi.</p></article></section>
       <footer className="landing-footer"><LumiWordmark compact /><p>made for curious people with a lot going on.</p><button className="text-button" onClick={() => setThemeOpen(true)}>change the mood ◐</button></footer>
@@ -398,11 +415,11 @@ export default function Home() {
         </section>
 
         <div className="sidebar-bottom">
-          <button className="profile-button" onClick={() => profile ? logout() : setAuthOpen(true)}>
+          <button className="settings-launch" onClick={() => setSettingsOpen(true)}><span>⚙</span> settings</button>
+          <div className="profile-button">
             <span className="avatar">{(profile?.name || "g")[0].toLowerCase()}</span>
-            <span><strong>{profile?.name || "guest explorer"}</strong><small>{profile ? "tap to log out" : "tap to log in"}</small></span>
-            <span className="dots">•••</span>
-          </button>
+            <span><strong>{profile?.name || "guest explorer"}</strong><small>{profile ? profile.email : "not signed in"}</small></span>
+          </div>
         </div>
       </aside>
 
