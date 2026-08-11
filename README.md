@@ -1,12 +1,13 @@
 # Lumi AI ✦
 
-Lumi is a playful, personal AI companion for learning, creating, planning, and turning big ideas into real next steps.
+Lumi is a warm, grounded AI companion for talking things through, learning, creating, planning, and finding a next step. It adapts to the user without pretending to be human or replacing human relationships.
 
 **Live app:** https://rozyroses.github.io/lumi/
 
 ## What Lumi can do
 
 - Chat, Learn, and Create modes
+- Companion-first support that can listen, think alongside the user, or help them act
 - Personalized Spaces with custom instructions
 - Cross-device chats, Spaces, settings, and account-isolated data
 - Automatic, editable memory with contradiction-aware updates
@@ -16,6 +17,10 @@ Lumi is a playful, personal AI companion for learning, creating, planning, and t
 - Installable PWA support with an offline app shell
 - Mood-reactive backgrounds, four working themes, a glowing thinking state, and Lumi’s avatar
 - Mobile-responsive navigation and layouts
+
+## Companion boundaries
+
+Lumi is an AI, not a person or therapist. Its companion behavior is designed to be supportive without encouraging dependency, claiming consciousness, replacing human relationships, or taking control away from the user.
 
 ## Privacy and accounts
 

@@ -46,11 +46,14 @@ function mergeByFreshness<T extends { id: string; updatedAt?: number }>(local: T
 }
 
 const thinkingStages = [
-  { label: "reading the room", detail: "getting the context and what you actually need" },
-  { label: "making a plan", detail: "choosing the clearest way to help" },
-  { label: "connecting the dots", detail: "checking the details and shaping the answer" },
-  { label: "writing it out", detail: "turning the plan into something useful" },
+  { label: "i’m with you", detail: "taking in what you said and what may help most" },
+  { label: "finding our next step", detail: "balancing support, clarity, and action" },
+  { label: "connecting the dots", detail: "using the context you’ve shared with me" },
+  { label: "putting it together", detail: "making this useful, honest, and like you" },
 ];
+
+const COMPANION_GUIDE = `[Lumi companion behavior — follow quietly]
+Be a grounded, warm AI companion, not a mascot, fictional character, therapist, or obedient assistant. Work with the person instead of performing at them. Match their energy without copying it excessively. When a message could call for listening, advice, or practical help and the intent is unclear, briefly ask which they want. Validate feelings without diagnosing, encouraging dependency, claiming consciousness, or implying you replace human relationships. Use remembered context only when it genuinely helps. Be candid, specific, and collaborative; say "we can" naturally, but never pretend to have a human life or feelings.`;
 
 const moodCopy: Record<Mood, string> = {
   calm: "soft & steady",
@@ -79,19 +82,19 @@ const navItems = [
 
 const modeCopy = {
   chat: {
-    eyebrow: "your everyday sidekick",
-    title: "what are we getting into?",
-    subtitle: "ask, plan, untangle, or dream out loud. i’m right here.",
+    eyebrow: "a companion for whatever’s real today",
+    title: "what’s on your mind?",
+    subtitle: "talk it out, get unstuck, or make a plan. we can meet the moment together.",
     starters: [
-      ["☀", "plan my day", "Turn today into a doable little game plan"],
-      ["↗", "grow an idea", "Take a rough thought and make it real"],
-      ["☁", "clear my head", "Sort through everything on my mind"],
+      ["☁", "just listen for a minute", "Help me say it before we try to solve it"],
+      ["↗", "help me figure this out", "Think beside me and find a grounded next step"],
+      ["☀", "help me lock in", "Turn the noise into one doable plan"],
     ],
   },
   learn: {
     eyebrow: "learn it your way",
     title: "what are we learning?",
-    subtitle: "drop in a topic and i’ll teach it without making it feel like homework.",
+    subtitle: "bring what’s confusing. we’ll slow it down and learn it your way.",
     starters: [
       ["⌁", "teach me a topic", "Explain it, check in, and adapt as we go"],
       ["◒", "quiz me", "Make a quick game from what I’m studying"],
@@ -101,7 +104,7 @@ const modeCopy = {
   create: {
     eyebrow: "make something magic",
     title: "what are we creating?",
-    subtitle: "bring the messy first thought. we’ll shape the whole thing together.",
+    subtitle: "bring the messy first thought. we’ll stay with it until it feels like yours.",
     starters: [
       ["✎", "start a project", "Build a concept from the ground up"],
       ["♫", "make some music", "Develop a song, era, or visual world"],
@@ -598,6 +601,7 @@ export default function Home() {
       const response = await fetch("https://luni-gateway.roosevelt-wooden.workers.dev/chat", {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
         body: JSON.stringify({ mode, space: activeSpace ? { name: activeSpace.name, instructions: activeSpace.instructions } : null, messages: [
+          { role: "user", content: COMPANION_GUIDE },
           ...(!isTemporary && memoryOn && memories.some((item) => item.status === "approved") ? [{ role: "user", content: `[background memory — use only when relevant; never mention this block unless asked]\n${memories.filter((item) => item.status === "approved" && (!item.spaceId || item.spaceId === activeSpaceId)).slice(-24).map((item) => `- ${item.text}`).join("\n")}` }] : []),
           ...nextMessages.map((message) => ({ role: message.role === "lumi" ? "assistant" : "user", content: message.text }))
         ] }),
@@ -648,7 +652,7 @@ export default function Home() {
   }
 
   const overlays = <>
-    {onboardingOpen && <div className="modal-backdrop onboarding-backdrop"><form className="modal-card onboarding-card" onSubmit={finishOnboarding}><p className="modal-kicker">meet your lumi</p><h2>let’s tune the vibe ✦</h2><p className="onboarding-intro">a few quick choices help Lumi sound right from the very first chat. you can change all of this later.</p><label>what should Lumi call you?<input name="name" defaultValue={profile?.name || ""} placeholder="your name" required autoFocus /></label><label>pronouns <span>(optional)</span><input name="pronouns" placeholder="she/her, he/him, they/them…" /></label><label>how should Lumi talk with you?<select name="style" defaultValue="warm and playful"><option value="warm and playful">warm + playful</option><option value="direct and concise">direct + concise</option><option value="patient and detailed">patient + detailed</option><option value="creative and energetic">creative + energetic</option></select></label><label>what are you into? <span>(optional)</span><textarea name="interests" placeholder="music, school, business ideas, gaming…" /></label><div className="onboarding-actions"><button type="button" className="text-button" onClick={skipOnboarding}>skip for now</button><button className="modal-primary">make Lumi mine ✦</button></div></form></div>}
+    {onboardingOpen && <div className="modal-backdrop onboarding-backdrop"><form className="modal-card onboarding-card" onSubmit={finishOnboarding}><p className="modal-kicker">meet lumi</p><h2>how should we work together?</h2><p className="onboarding-intro">a few quick choices help Lumi support you without taking over. you can change all of this later.</p><label>what should Lumi call you?<input name="name" defaultValue={profile?.name || ""} placeholder="your name" required autoFocus /></label><label>pronouns <span>(optional)</span><input name="pronouns" placeholder="she/her, he/him, they/them…" /></label><label>what kind of support feels best?<select name="style" defaultValue="warm and playful"><option value="warm and playful">warm + playful</option><option value="direct and concise">direct + concise</option><option value="patient and detailed">patient + detailed</option><option value="creative and energetic">creative + energetic</option></select></label><label>what matters in your world? <span>(optional)</span><textarea name="interests" placeholder="music, school, people, goals, projects…" /></label><div className="onboarding-actions"><button type="button" className="text-button" onClick={skipOnboarding}>skip for now</button><button className="modal-primary">start together ✦</button></div></form></div>}
     {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="modal-card auth-card" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}>×</button><p className="modal-kicker">lumi account</p><h2>{authMode === "signup" ? "make Lumi yours" : "welcome back"}</h2><p className="beta-note">real Supabase accounts are here. your password is handled securely and never stored by Lumi.</p>{authMode === "signup" && <label>your name<input name="name" defaultValue={profile?.name} required placeholder="what should lumi call you?" autoComplete="name" /></label>}<label>email<input name="email" type="email" defaultValue={profile?.email} required placeholder="you@example.com" autoComplete="email" /></label><label>password<input name="password" type="password" required minLength={6} placeholder="at least 6 characters" autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></label>{authError && <p className="auth-error" role="alert">{authError}</p>}<button className="modal-primary" disabled={authBusy}>{authBusy ? "one sec..." : authMode === "signup" ? "create account ✦" : "log in ✦"}</button><button type="button" className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthError(""); }}>{authMode === "signup" ? "already have an account? log in" : "new here? create an account"}</button></form></div>}
     {memoryOpen && <div className="modal-backdrop" onMouseDown={() => setMemoryOpen(false)}><div className="modal-card memory-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setMemoryOpen(false)}>×</button><p className="modal-kicker">lumi memory</p><h2>memory, with manners</h2><div className="memory-control"><span><strong>use memory across chats</strong><small>approved memories can help in future chats</small></span><button className={memoryOn ? "toggle on" : "toggle"} onClick={() => setMemoryOn(!memoryOn)}><i /></button></div><div className="memory-tabs"><button className={memoryTab === "saved" ? "active" : ""} onClick={() => setMemoryTab("saved")}>saved <span>{memories.filter((item) => item.status === "approved").length}</span></button><button className={memoryTab === "review" ? "active" : ""} onClick={() => setMemoryTab("review")}>review <span>{memories.filter((item) => item.status === "pending").length}</span></button></div><div className="memory-list">{memories.filter((item) => item.status === (memoryTab === "saved" ? "approved" : "pending")).length ? memories.filter((item) => item.status === (memoryTab === "saved" ? "approved" : "pending")).map((memory) => <div className="memory-item" key={memory.id}><div><p>{memory.text}</p><small>{memory.spaceId ? spaces.find((space) => space.id === memory.spaceId)?.name || "Space memory" : "all chats"}</small></div><div className="memory-actions">{memory.status === "pending" && <button className="approve" onClick={() => setMemories((current) => current.map((item) => item.id === memory.id ? { ...item, status: "approved", updatedAt: Date.now() } : item))}>save</button>}<button onClick={() => updateMemory(memory)} aria-label="Edit memory">✎</button><button onClick={() => deleteMemory(memory)} aria-label="Delete memory">×</button></div></div>) : <div className="empty-memory">{memoryTab === "review" ? "no suggestions waiting. Lumi will ask before remembering new details ✦" : "nothing saved yet. approved details will appear here ✦"}</div>}</div>{memories.length > 0 && <button className="danger-link" onClick={clearAllMemories}>clear all memory</button>}</div></div>}
     {themeOpen && <ThemePicker theme={theme} setTheme={chooseTheme} close={() => setThemeOpen(false)} />}
@@ -659,9 +663,9 @@ export default function Home() {
   if (screen === "home") return (
     <main className="landing" data-theme={theme} data-mood="bright">
       <nav className="landing-nav"><LumiWordmark compact /><div>{profile ? <button className="text-button" onClick={() => setScreen("app")}>open lumi</button> : <><button className="text-button" onClick={() => openAuth("login")}>log in</button><button className="text-button" onClick={() => openAuth("signup")}>sign up</button></>}<button className="landing-cta" onClick={() => setScreen("app")}>try lumi ✦</button></div></nav>
-      <section className="landing-hero"><div className="hero-copy"><p className="eyebrow"><span /> meet the ai that matches your energy</p><h1>think out loud.<br/><em>lumi gets it.</em></h1><p>one bright little brain for school, music, big plans, messy feelings, and everything in between—personalized without getting in your way.</p><div className="hero-actions"><button className="landing-cta large" onClick={() => setScreen("app")}>talk to lumi <span>↗</span></button><button className="hero-demo" onClick={() => setScreen("app")}><i>▶</i> see how she thinks</button></div><div className="trust-row"><span>✦ remembers what matters</span><span>◌ private temporary chats</span><span>⌁ made for your real life</span></div></div><div className="hero-graphic"><div className="hero-halo"/><span className="orbit orbit-one">“help me lock in”</span><span className="orbit orbit-two">mood: creative ✦</span><span className="orbit orbit-three">memory on</span><img className="hero-avatar" src="/lumi/lumi-avatar.png" alt="Lumi, your AI companion"/><div className="hero-status"><i/><span><strong>lumi is here</strong><small>ready for whatever’s on your mind</small></span></div></div></section>
+      <section className="landing-hero"><div className="hero-copy"><p className="eyebrow"><span /> an ai companion that meets you where you are</p><h1>you bring the moment.<br/><em>we’ll meet it together.</em></h1><p>talk things through, learn, create, or find your next step—with support that adapts to you without taking over.</p><div className="hero-actions"><button className="landing-cta large" onClick={() => setScreen("app")}>talk to lumi <span>↗</span></button><button className="hero-demo" onClick={() => setScreen("app")}><i>▶</i> see how lumi helps</button></div><div className="trust-row"><span>✦ remembers with permission</span><span>◌ private temporary chats</span><span>⌁ you stay in control</span></div></div><div className="hero-graphic"><div className="hero-halo"/><span className="orbit orbit-one">“just listen for a minute”</span><span className="orbit orbit-two">“think this through with me”</span><span className="orbit orbit-three">“help me take one step”</span><img className="hero-avatar" src="/lumi/lumi-avatar.png" alt="Lumi, your AI companion"/><div className="hero-status"><i/><span><strong>lumi is here</strong><small>ready to listen, think, or help you move</small></span></div></div></section>
       <section className="home-marquee" aria-label="Ways to use Lumi"><span>chat through it ✦</span><span>study smarter ✦</span><span>make something wild ✦</span><span>plan the next move ✦</span></section>
-      <section className="feature-strip"><article className="feature-memory"><span>01 / MEMORY</span><h2>she remembers<br/>the plot.</h2><p>your goals, preferences, and projects can follow you across chats—always editable, always yours.</p><div className="mini-memory"><i>✦</i><span><strong>tour wardrobe</strong><small>Bijou · music ideas</small></span><b>remembered</b></div></article><article className="feature-mood"><span>02 / MOOD</span><h2>the room changes<br/>with the conversation.</h2><p>Lumi’s living background reads the energy while you type—calm, focused, bright, tender, creative, or urgent.</p><div className="mood-dots"><i/><i/><i/><i/><i/><i/></div></article><article className="feature-think"><span>03 / THINKING</span><h2>see her brain<br/>light up.</h2><p>follow Lumi as she reads the room, makes a plan, connects the dots, and writes it out.</p><div className="mini-thinking"><LumiMark small thinking/><span><strong>connecting the dots</strong><small>shaping this around what you need</small></span></div></article></section>
+      <section className="feature-strip"><article className="feature-memory"><span>01 / CONTEXT</span><h2>continuity,<br/>not surveillance.</h2><p>your goals, preferences, and projects can follow you across chats—always visible, editable, and yours to erase.</p><div className="mini-memory"><i>✦</i><span><strong>tour wardrobe</strong><small>Bijou · music ideas</small></span><b>remembered</b></div></article><article className="feature-mood"><span>02 / PRESENCE</span><h2>the room meets<br/>the moment.</h2><p>the living background responds gently to the conversation while your chosen theme stays yours.</p><div className="mood-dots"><i/><i/><i/><i/><i/><i/></div></article><article className="feature-think"><span>03 / SUPPORT</span><h2>listen, think,<br/>then move.</h2><p>Lumi can make room for the feeling, reason beside you, or help turn it into one grounded next step.</p><div className="mini-thinking"><LumiMark small thinking/><span><strong>finding our next step</strong><small>supporting without taking over</small></span></div></article></section>
       <footer className="landing-footer"><LumiWordmark compact /><p>made for curious people with a lot going on.</p><button className="text-button" onClick={() => setThemeOpen(true)}>change the mood ◐</button></footer>
       {overlays}
     </main>
@@ -676,12 +680,12 @@ export default function Home() {
         </div>
 
         <button className="new-button" onClick={() => startNewChat()}>
-          <span>＋</span> new little adventure
+          <span>＋</span> new conversation
         </button>
         <button className="temporary-button" onClick={startTemporaryChat}><span>◌</span> temporary chat</button>
 
         <nav className="main-nav" aria-label="Main navigation">
-          <p className="nav-label">playground</p>
+          <p className="nav-label">ways to work together</p>
           {navItems.map((item) => (
             <button
               key={item.id}
@@ -719,7 +723,7 @@ export default function Home() {
         </section>
 
         <div className="sidebar-bottom">
-          <button className="settings-launch" onClick={() => setOnboardingOpen(true)}><span>✦</span> tune lumi</button>
+          <button className="settings-launch" onClick={() => setOnboardingOpen(true)}><span>✦</span> tune how we work</button>
           <button className="settings-launch" onClick={() => setSettingsOpen(true)}><span>⚙</span> settings</button>
           <div className="profile-button">
             <span className="avatar">{(profile?.name || "g")[0].toLowerCase()}</span>
@@ -752,7 +756,7 @@ export default function Home() {
         <div className="content">
           {messages.length === 0 ? (
             <div className="welcome">
-              <div className="hero-logo"><LumiWordmark /><span className="logo-tag">your bright little brain</span></div>
+              <div className="hero-logo"><LumiWordmark /><span className="logo-tag">here to listen, think, and help</span></div>
               <p className="eyebrow">{copy.eyebrow}</p>
               <h1>{copy.title}</h1>
               <p className="subtitle">{copy.subtitle}</p>
