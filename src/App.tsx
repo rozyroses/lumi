@@ -1,9 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 type Mode = "chat" | "learn" | "create";
 type Message = { role: "lumi" | "user"; text: string };
+type ProgressStage = "understanding your request" | "making a plan" | "writing the response";
 type Chat = { id: string; title: string; mode: Mode; messages: Message[]; updatedAt: number };
 
 const CHATS_KEY = "lumi-chats-v1";
@@ -65,6 +68,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [memoryOn, setMemoryOn] = useState(true);
   const [isThinking, setIsThinking] = useState(false);
+  const [progressStage, setProgressStage] = useState<ProgressStage>("understanding your request");
   const [toast, setToast] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const copy = modeCopy[mode];
@@ -127,7 +131,9 @@ export default function Home() {
     const clean = text.trim();
     if (!clean || isThinking) return;
     const nextMessages: Message[] = [...messages, { role: "user", text: clean }];
-    updateActive(nextMessages); setInput(""); setIsThinking(true);
+    updateActive(nextMessages); setInput(""); setIsThinking(true); setProgressStage("understanding your request");
+    const planTimer = window.setTimeout(() => setProgressStage("making a plan"), 650);
+    const writingTimer = window.setTimeout(() => setProgressStage("writing the response"), 1500);
     try {
       const response = await fetch("https://luni-gateway.roosevelt-wooden.workers.dev/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -139,7 +145,9 @@ export default function Home() {
     } catch (error) {
       console.error("Lumi chat request failed", error);
       updateActive([...nextMessages, { role: "lumi", text: "my brain connection hiccupped for a second. try that again in a moment ✦" }]);
-    } finally { setIsThinking(false); }
+    } finally {
+      window.clearTimeout(planTimer); window.clearTimeout(writingTimer); setIsThinking(false);
+    }
   }
 
   function handleSubmit(event: FormEvent) {
@@ -252,10 +260,31 @@ export default function Home() {
               {messages.map((message, index) => (
                 <div key={index} className={`message ${message.role}`}>
                   {message.role === "lumi" && <LumiMark small />}
-                  <p>{message.text}</p>
+                  {message.role === "lumi" ? (
+                    <div className="message-content">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
+                      <details className="approach-note">
+                        <summary>how lumi approached this</summary>
+                        <p>{mode === "learn"
+                          ? "i organized the explanation around the main idea, useful examples, and a clear next step."
+                          : mode === "create"
+                            ? "i shaped your idea into a focused creative direction with practical next moves."
+                            : "i focused on what you asked, the most useful context, and a clear answer you can act on."}</p>
+                      </details>
+                    </div>
+                  ) : <p>{message.text}</p>}
                 </div>
               ))}
-              {isThinking && <div className="message lumi"><LumiMark small /><p>thinking… ✦</p></div>}
+              {isThinking && (
+                <div className="message lumi">
+                  <LumiMark small />
+                  <div className="thinking-card">
+                    <span className="thinking-spark">✦</span>
+                    <span>{progressStage}</span>
+                    <span className="thinking-dots" aria-hidden="true"><i /><i /><i /></span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
