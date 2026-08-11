@@ -19,11 +19,11 @@ const ACTIVE_CHAT_KEY = "lumi-active-chat-v1";
 const SPACES_KEY = "lumi-spaces-v1";
 const ACTIVE_SPACE_KEY = "lumi-active-space-v1";
 const THEME_KEY = "lumi-theme-v1";
-const PROFILE_KEY = "lumi-profile-v1";
 const MEMORIES_KEY = "lumi-memories-v1";
 const MEMORY_ON_KEY = "lumi-memory-enabled-v1";
 const CHAT_PREFS_KEY = "lumi-chat-preferences-v1";
 const ONBOARDING_KEY = "lumi-onboarding-v1";
+const GUEST_OWNER = "guest";
 const SUPABASE_URL = "https://yrammmjnviozydebshbd.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ecQn0VjaNhnsJR_Kys_Efg_z-CQvzin";
 const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -33,6 +33,7 @@ const DEFAULT_SPACES: Space[] = [
   { id: "big-dreams", name: "big dreams", description: "businesses, goals, and the wild ideas worth building", instructions: "Turn ambitious ideas into grounded next steps without shrinking the vision.", color: "mint" },
 ];
 const withSpaceTimestamp = (space: Space): Space => ({ ...space, updatedAt: space.updatedAt || 1 });
+const storageKey = (key: string, ownerId: string) => `${key}:${ownerId}`;
 const makeChat = (mode: Mode, spaceId?: string, temporary = false): Chat => ({ id: crypto.randomUUID(), title: temporary ? "temporary chat" : "new adventure", mode, messages: [], updatedAt: Date.now(), spaceId, temporary });
 function mergeByFreshness<T extends { id: string; updatedAt?: number }>(local: T[], remote: T[]): T[] {
   const merged = new Map<string, T>();
@@ -147,6 +148,7 @@ export default function Home() {
   const [chatSearch, setChatSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [dataOwnerId, setDataOwnerId] = useState<string | null>(null);
   const [localDataReady, setLocalDataReady] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
   const [syncState, setSyncState] = useState<"device" | "syncing" | "synced" | "error">("device");
@@ -167,27 +169,10 @@ export default function Home() {
   });
 
   useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(CHATS_KEY) || "[]") as Chat[];
-      const preferences = JSON.parse(localStorage.getItem(CHAT_PREFS_KEY) || "{}") as Record<string, { pinned?: boolean; archived?: boolean }>;
-      const restored = saved.map((chat) => ({ ...chat, ...preferences[chat.id] }));
-      if (saved.length) {
-        const selected = restored.find((chat) => chat.id === localStorage.getItem(ACTIVE_CHAT_KEY)) ?? restored.find((chat) => !chat.archived) ?? restored[0];
-        setChats(restored); setActiveChatId(selected.id); setMode(selected.mode);
-      } else {
-        const first = makeChat("chat"); setChats([first]); setActiveChatId(first.id);
-      }
-    } catch {
-      const first = makeChat("chat"); setChats([first]); setActiveChatId(first.id);
-    }
-  }, []);
-
-  useEffect(() => {
     const online = () => { setIsOnline(true); setChatError(""); };
     const offline = () => setIsOnline(false);
     window.addEventListener("online", online);
     window.addEventListener("offline", offline);
-    if (!localStorage.getItem(ONBOARDING_KEY)) setOnboardingOpen(true);
     return () => { window.removeEventListener("online", online); window.removeEventListener("offline", offline); };
   }, []);
 
@@ -203,34 +188,46 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!dataOwnerId) return;
+    setLocalDataReady(false);
+    setCloudReady(false);
     try {
-      setTheme((localStorage.getItem(THEME_KEY) as Theme) || "midnight");
-      setProfile(JSON.parse(localStorage.getItem(PROFILE_KEY) || "null"));
-      const savedMemories = JSON.parse(localStorage.getItem(MEMORIES_KEY) || "[]") as Partial<Memory>[];
+      const get = (key: string) => localStorage.getItem(storageKey(key, dataOwnerId));
+      const saved = JSON.parse(get(CHATS_KEY) || "[]") as Chat[];
+      const preferences = JSON.parse(get(CHAT_PREFS_KEY) || "{}") as Record<string, { pinned?: boolean; archived?: boolean }>;
+      const restored = saved.map((chat) => ({ ...chat, ...preferences[chat.id] }));
+      const selected = restored.find((chat) => chat.id === get(ACTIVE_CHAT_KEY)) ?? restored.find((chat) => !chat.archived) ?? restored[0];
+      if (selected) {
+        setChats(restored); setActiveChatId(selected.id); setMode(selected.mode);
+      } else {
+        const first = makeChat("chat"); setChats([first]); setActiveChatId(first.id); setMode("chat");
+      }
+      const savedSpaces = JSON.parse(get(SPACES_KEY) || "null") as Space[] | null;
+      setSpaces(savedSpaces?.length ? savedSpaces : DEFAULT_SPACES);
+      setActiveSpaceId(get(ACTIVE_SPACE_KEY));
+      const savedMemories = JSON.parse(get(MEMORIES_KEY) || "[]") as Partial<Memory>[];
       setMemories(savedMemories.map((item) => ({ id: String(item.id), text: String(item.text), createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Number(item.createdAt) || Date.now(), spaceId: item.spaceId, status: item.status || "approved" })));
-      setMemoryOn(localStorage.getItem(MEMORY_ON_KEY) !== "false");
-    } catch { /* use defaults */ }
-  }, []);
+      setTheme((get(THEME_KEY) as Theme) || "midnight");
+      setMemoryOn(get(MEMORY_ON_KEY) !== "false");
+      setOnboardingOpen(!get(ONBOARDING_KEY));
+    } catch {
+      const first = makeChat("chat");
+      setChats([first]); setActiveChatId(first.id); setMode("chat"); setSpaces(DEFAULT_SPACES); setActiveSpaceId(null);
+      setMemories([]); setTheme("midnight"); setMemoryOn(true); setOnboardingOpen(true);
+    }
+    setLocalDataReady(true);
+  }, [dataOwnerId]);
 
-  useEffect(() => { localStorage.setItem(THEME_KEY, theme); }, [theme]);
-  useEffect(() => { localStorage.setItem(MEMORIES_KEY, JSON.stringify(memories)); }, [memories]);
-  useEffect(() => { localStorage.setItem(MEMORY_ON_KEY, String(memoryOn)); }, [memoryOn]);
+  useEffect(() => { if (dataOwnerId && localDataReady) localStorage.setItem(storageKey(THEME_KEY, dataOwnerId), theme); }, [theme, dataOwnerId, localDataReady]);
+  useEffect(() => { if (dataOwnerId && localDataReady) localStorage.setItem(storageKey(MEMORIES_KEY, dataOwnerId), JSON.stringify(memories)); }, [memories, dataOwnerId, localDataReady]);
+  useEffect(() => { if (dataOwnerId && localDataReady) localStorage.setItem(storageKey(MEMORY_ON_KEY, dataOwnerId), String(memoryOn)); }, [memoryOn, dataOwnerId, localDataReady]);
   useEffect(() => {
-    if (profile?.id) saveCloudPreferences(theme, memoryOn);
-  }, [theme, memoryOn, profile?.id]);
+    if (profile?.id && cloudReady) saveCloudPreferences(theme, memoryOn);
+  }, [theme, memoryOn, profile?.id, cloudReady]);
   useEffect(() => {
     const preferences = Object.fromEntries(chats.filter((chat) => chat.pinned || chat.archived).map((chat) => [chat.id, { pinned: chat.pinned, archived: chat.archived }]));
-    localStorage.setItem(CHAT_PREFS_KEY, JSON.stringify(preferences));
-  }, [chats]);
-
-  useEffect(() => {
-    try {
-      const savedSpaces = JSON.parse(localStorage.getItem(SPACES_KEY) || "null") as Space[] | null;
-      if (savedSpaces?.length) setSpaces(savedSpaces);
-      setActiveSpaceId(localStorage.getItem(ACTIVE_SPACE_KEY));
-    } catch { setSpaces(DEFAULT_SPACES); }
-    setLocalDataReady(true);
-  }, []);
+    if (dataOwnerId && localDataReady) localStorage.setItem(storageKey(CHAT_PREFS_KEY, dataOwnerId), JSON.stringify(preferences));
+  }, [chats, dataOwnerId, localDataReady]);
 
   useEffect(() => {
     if (!profile?.id || !localDataReady) {
@@ -287,15 +284,17 @@ export default function Home() {
 
   useEffect(() => {
     const durableChats = chats.filter((chat) => !chat.temporary);
-    if (durableChats.length) localStorage.setItem(CHATS_KEY, JSON.stringify(durableChats));
-    if (activeChatId && !activeChat?.temporary) localStorage.setItem(ACTIVE_CHAT_KEY, activeChatId);
-  }, [chats, activeChatId]);
+    if (!dataOwnerId || !localDataReady) return;
+    localStorage.setItem(storageKey(CHATS_KEY, dataOwnerId), JSON.stringify(durableChats));
+    if (activeChatId && !activeChat?.temporary) localStorage.setItem(storageKey(ACTIVE_CHAT_KEY, dataOwnerId), activeChatId);
+  }, [chats, activeChatId, dataOwnerId, localDataReady]);
 
   useEffect(() => {
-    localStorage.setItem(SPACES_KEY, JSON.stringify(spaces));
-    if (activeSpaceId) localStorage.setItem(ACTIVE_SPACE_KEY, activeSpaceId);
-    else localStorage.removeItem(ACTIVE_SPACE_KEY);
-  }, [spaces, activeSpaceId]);
+    if (!dataOwnerId || !localDataReady) return;
+    localStorage.setItem(storageKey(SPACES_KEY, dataOwnerId), JSON.stringify(spaces));
+    if (activeSpaceId) localStorage.setItem(storageKey(ACTIVE_SPACE_KEY, dataOwnerId), activeSpaceId);
+    else localStorage.removeItem(storageKey(ACTIVE_SPACE_KEY, dataOwnerId));
+  }, [spaces, activeSpaceId, dataOwnerId, localDataReady]);
 
   useEffect(() => {
     if (!isThinking) { setThinkingStage(0); return; }
@@ -345,7 +344,7 @@ export default function Home() {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const values: Onboarding = { name: String(data.get("name") || profile?.name || "explorer").trim().slice(0, 40), pronouns: String(data.get("pronouns") || "").trim().slice(0, 30), style: String(data.get("style") || "warm and playful"), interests: String(data.get("interests") || "").trim().slice(0, 180) };
-    localStorage.setItem(ONBOARDING_KEY, JSON.stringify(values));
+    if (dataOwnerId) localStorage.setItem(storageKey(ONBOARDING_KEY, dataOwnerId), JSON.stringify(values));
     const now = Date.now();
     const starterMemories = [`call me ${values.name}`, values.pronouns && `my pronouns are ${values.pronouns}`, `i prefer Lumi to communicate in a ${values.style} style`, values.interests && `my interests include ${values.interests}`].filter(Boolean);
     setMemories((current) => {
@@ -358,7 +357,7 @@ export default function Home() {
     showToast("Lumi is tuned to you ✦");
   }
 
-  function skipOnboarding() { localStorage.setItem(ONBOARDING_KEY, "skipped"); setOnboardingOpen(false); }
+  function skipOnboarding() { if (dataOwnerId) localStorage.setItem(storageKey(ONBOARDING_KEY, dataOwnerId), "skipped"); setOnboardingOpen(false); }
 
   function updateMemory(memory: Memory) {
     const text = window.prompt("edit what Lumi should remember", memory.text)?.trim();
@@ -381,7 +380,7 @@ export default function Home() {
   function applySession(nextSession: Session | null) {
     if (!nextSession?.user) {
       setProfile(null);
-      localStorage.removeItem(PROFILE_KEY);
+      setDataOwnerId(GUEST_OWNER);
       return;
     }
     const nextProfile = {
@@ -390,16 +389,16 @@ export default function Home() {
       email: nextSession.user.email || "",
     };
     const metadata = nextSession.user.user_metadata || {};
-    if (metadata.lumi_theme) setTheme(metadata.lumi_theme as Theme);
-    if (typeof metadata.lumi_memory_on === "boolean") setMemoryOn(metadata.lumi_memory_on);
+    if (metadata.lumi_theme) localStorage.setItem(storageKey(THEME_KEY, nextSession.user.id), String(metadata.lumi_theme));
+    if (typeof metadata.lumi_memory_on === "boolean") localStorage.setItem(storageKey(MEMORY_ON_KEY, nextSession.user.id), String(metadata.lumi_memory_on));
     if (metadata.lumi_chat_preferences && typeof metadata.lumi_chat_preferences === "object") {
       const preferences = metadata.lumi_chat_preferences as Record<string, { pinned?: boolean; archived?: boolean }>;
       setChats((current) => current.map((chat) => ({ ...chat, ...preferences[chat.id] })));
-      localStorage.setItem(CHAT_PREFS_KEY, JSON.stringify(preferences));
+      localStorage.setItem(storageKey(CHAT_PREFS_KEY, nextSession.user.id), JSON.stringify(preferences));
     }
-    if (metadata.lumi_onboarding_complete) localStorage.setItem(ONBOARDING_KEY, JSON.stringify(metadata.lumi_onboarding || { complete: true }));
+    if (metadata.lumi_onboarding_complete) localStorage.setItem(storageKey(ONBOARDING_KEY, nextSession.user.id), JSON.stringify(metadata.lumi_onboarding || { complete: true }));
+    setDataOwnerId(nextSession.user.id);
     setProfile(nextProfile);
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(nextProfile));
   }
 
   function saveCloudPreferences(nextTheme = theme, nextMemoryOn = memoryOn, nextChats = chats) {
@@ -457,6 +456,8 @@ export default function Home() {
   }
 
   async function logout() {
+    setLocalDataReady(false); setCloudReady(false); setProfile(null); setDataOwnerId(null);
+    setChats([]); setActiveChatId(""); setSpaces(DEFAULT_SPACES); setActiveSpaceId(null); setMemories([]);
     await supabase.auth.signOut();
     setScreen("home"); setSidebarOpen(false); showToast("logged out safely ✦");
   }
@@ -496,7 +497,7 @@ export default function Home() {
     const { error } = await supabase.rpc("delete_lumi_account");
     setAccountBusy(false);
     if (error) { setAccountError("account deletion is not available yet. your account was not changed."); return; }
-    [CHATS_KEY, ACTIVE_CHAT_KEY, SPACES_KEY, ACTIVE_SPACE_KEY, THEME_KEY, PROFILE_KEY, MEMORIES_KEY, MEMORY_ON_KEY, CHAT_PREFS_KEY].forEach((key) => localStorage.removeItem(key));
+    if (dataOwnerId) [CHATS_KEY, ACTIVE_CHAT_KEY, SPACES_KEY, ACTIVE_SPACE_KEY, THEME_KEY, MEMORIES_KEY, MEMORY_ON_KEY, CHAT_PREFS_KEY, ONBOARDING_KEY].forEach((key) => localStorage.removeItem(storageKey(key, dataOwnerId)));
     setAccountOpen(false); setSettingsOpen(false); setProfile(null); setScreen("home"); showToast("your Lumi account was deleted");
   }
 
@@ -508,7 +509,7 @@ export default function Home() {
 
   function clearLocalData() {
     if (!window.confirm("clear chats, spaces, memories, and Lumi settings from this device?")) return;
-    [CHATS_KEY, ACTIVE_CHAT_KEY, SPACES_KEY, ACTIVE_SPACE_KEY, THEME_KEY, MEMORIES_KEY, MEMORY_ON_KEY, CHAT_PREFS_KEY].forEach((key) => localStorage.removeItem(key));
+    if (dataOwnerId) [CHATS_KEY, ACTIVE_CHAT_KEY, SPACES_KEY, ACTIVE_SPACE_KEY, THEME_KEY, MEMORIES_KEY, MEMORY_ON_KEY, CHAT_PREFS_KEY, ONBOARDING_KEY].forEach((key) => localStorage.removeItem(storageKey(key, dataOwnerId)));
     const first = makeChat("chat");
     setChats([first]); setActiveChatId(first.id); setSpaces(DEFAULT_SPACES); setActiveSpaceId(null);
     setMemories([]); setMemoryOn(true); setTheme("midnight"); setSettingsOpen(false);
