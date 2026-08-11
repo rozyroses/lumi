@@ -10,6 +10,7 @@ type Message = { role: "lumi" | "user"; text: string };
 type Chat = { id: string; title: string; mode: Mode; messages: Message[]; updatedAt: number; spaceId?: string; temporary?: boolean; pinned?: boolean; archived?: boolean };
 type Space = { id: string; name: string; description: string; instructions: string; color: "lavender" | "peach" | "mint"; updatedAt?: number };
 type Theme = "midnight" | "cloud" | "berry" | "forest";
+type Mood = "calm" | "bright" | "focused" | "tender" | "creative" | "urgent";
 type Profile = { id?: string; name: string; email: string };
 type Memory = { id: string; text: string; createdAt: number; updatedAt: number; spaceId?: string; status: "pending" | "approved" };
 type Onboarding = { name: string; pronouns: string; style: string; interests: string };
@@ -51,6 +52,25 @@ const thinkingStages = [
   { label: "writing it out", detail: "turning the plan into something useful" },
 ];
 
+const moodCopy: Record<Mood, string> = {
+  calm: "soft & steady",
+  bright: "good energy",
+  focused: "locked in",
+  tender: "gentle mode",
+  creative: "ideas sparking",
+  urgent: "moving with you",
+};
+
+function detectMood(text: string, mode: Mode): Mood {
+  const value = text.toLowerCase();
+  if (/\b(urgent|asap|emergency|quick|hurry|deadline|stressed|panic|help!)\b/.test(value)) return "urgent";
+  if (/\b(sad|hurt|cry|grief|miss|lonely|anxious|overwhelmed|scared|love you)\b/.test(value)) return "tender";
+  if (/\b(excited|yay|yass|omg|amazing|happy|celebrate|period|lmao|lol)\b/.test(value)) return "bright";
+  if (mode === "create" || /\b(create|design|song|music|idea|write|art|brand|story|visual)\b/.test(value)) return "creative";
+  if (mode === "learn" || /\b(study|learn|quiz|explain|homework|test|plan|research|focus)\b/.test(value)) return "focused";
+  return "calm";
+}
+
 const navItems = [
   { id: "chat", icon: "✦", label: "Chat" },
   { id: "learn", icon: "⌁", label: "Learn" },
@@ -90,10 +110,11 @@ const modeCopy = {
   },
 };
 
-function LumiMark({ small = false }: { small?: boolean }) {
+function LumiMark({ small = false, thinking = false }: { small?: boolean; thinking?: boolean }) {
   return (
-    <div className={small ? "lumi-mark small" : "lumi-mark"} aria-label="Lumi">
-      <span>✦</span>
+    <div className={`${small ? "lumi-mark small" : "lumi-mark"}${thinking ? " avatar-thinking" : ""}`} aria-label="Lumi">
+      <img src="/lumi/lumi-avatar.png" alt="" />
+      <span className="avatar-spark">✦</span>
     </div>
   );
 }
@@ -167,6 +188,8 @@ export default function Home() {
     if (!searchNeedle) return true;
     return chat.title.toLowerCase().includes(searchNeedle) || chat.messages.some((message) => message.text.toLowerCase().includes(searchNeedle));
   });
+  const latestUserText = [...messages].reverse().find((message) => message.role === "user")?.text || "";
+  const mood = detectMood(input || latestUserText, mode);
 
   useEffect(() => {
     const online = () => { setIsOnline(true); setChatError(""); };
@@ -634,17 +657,18 @@ export default function Home() {
   </>;
 
   if (screen === "home") return (
-    <main className="landing" data-theme={theme}>
+    <main className="landing" data-theme={theme} data-mood="bright">
       <nav className="landing-nav"><LumiWordmark compact /><div>{profile ? <button className="text-button" onClick={() => setScreen("app")}>open lumi</button> : <><button className="text-button" onClick={() => openAuth("login")}>log in</button><button className="text-button" onClick={() => openAuth("signup")}>sign up</button></>}<button className="landing-cta" onClick={() => setScreen("app")}>try lumi ✦</button></div></nav>
-      <section className="landing-hero"><div className="hero-copy"><p className="eyebrow">your bright little brain</p><h1>an ai that gets to know <em>you.</em></h1><p>lumi helps you think, learn, create, and keep life moving—without making you start over in every new chat.</p><div className="hero-actions"><button className="landing-cta large" onClick={() => setScreen("app")}>start a little adventure ↗</button><button className="text-button" onClick={() => setAuthOpen(true)}>i already have a profile</button></div></div><div className="hero-graphic"><span className="orbit orbit-one">learn</span><span className="orbit orbit-two">create</span><span className="orbit orbit-three">remember</span><div className="hero-orb"><b>✦</b><small>hey, i’m lumi</small></div></div></section>
-      <section className="feature-strip"><article><span>01</span><h2>memory, with manners</h2><p>Lumi remembers the useful stuff across chats. see it, edit it, pause it, or wipe it.</p></article><article><span>02</span><h2>three ways to think</h2><p>chat through life, learn at your pace, or build the thing living in your head.</p></article><article><span>03</span><h2>your vibe, too</h2><p>switch themes whenever the mood changes. the personality stays Lumi.</p></article></section>
+      <section className="landing-hero"><div className="hero-copy"><p className="eyebrow"><span /> meet the ai that matches your energy</p><h1>think out loud.<br/><em>lumi gets it.</em></h1><p>one bright little brain for school, music, big plans, messy feelings, and everything in between—personalized without getting in your way.</p><div className="hero-actions"><button className="landing-cta large" onClick={() => setScreen("app")}>talk to lumi <span>↗</span></button><button className="hero-demo" onClick={() => setScreen("app")}><i>▶</i> see how she thinks</button></div><div className="trust-row"><span>✦ remembers what matters</span><span>◌ private temporary chats</span><span>⌁ made for your real life</span></div></div><div className="hero-graphic"><div className="hero-halo"/><span className="orbit orbit-one">“help me lock in”</span><span className="orbit orbit-two">mood: creative ✦</span><span className="orbit orbit-three">memory on</span><img className="hero-avatar" src="/lumi/lumi-avatar.png" alt="Lumi, your AI companion"/><div className="hero-status"><i/><span><strong>lumi is here</strong><small>ready for whatever’s on your mind</small></span></div></div></section>
+      <section className="home-marquee" aria-label="Ways to use Lumi"><span>chat through it ✦</span><span>study smarter ✦</span><span>make something wild ✦</span><span>plan the next move ✦</span></section>
+      <section className="feature-strip"><article className="feature-memory"><span>01 / MEMORY</span><h2>she remembers<br/>the plot.</h2><p>your goals, preferences, and projects can follow you across chats—always editable, always yours.</p><div className="mini-memory"><i>✦</i><span><strong>tour wardrobe</strong><small>Bijou · music ideas</small></span><b>remembered</b></div></article><article className="feature-mood"><span>02 / MOOD</span><h2>the room changes<br/>with the conversation.</h2><p>Lumi’s living background reads the energy while you type—calm, focused, bright, tender, creative, or urgent.</p><div className="mood-dots"><i/><i/><i/><i/><i/><i/></div></article><article className="feature-think"><span>03 / THINKING</span><h2>see her brain<br/>light up.</h2><p>follow Lumi as she reads the room, makes a plan, connects the dots, and writes it out.</p><div className="mini-thinking"><LumiMark small thinking/><span><strong>connecting the dots</strong><small>shaping this around what you need</small></span></div></article></section>
       <footer className="landing-footer"><LumiWordmark compact /><p>made for curious people with a lot going on.</p><button className="text-button" onClick={() => setThemeOpen(true)}>change the mood ◐</button></footer>
       {overlays}
     </main>
   );
 
   return (
-    <main className={`app-shell mode-${mode} ${isThinking ? "is-thinking" : ""}`} data-theme={theme}>
+    <main className={`app-shell mode-${mode} mood-${mood} ${isThinking ? "is-thinking" : ""}`} data-theme={theme} data-mood={mood}>
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="brand-row">
           <LumiWordmark compact />
@@ -707,10 +731,12 @@ export default function Home() {
       {sidebarOpen && <button className="scrim" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />}
 
       <section className="workspace">
+        <div className="mood-scene" aria-hidden="true"><i/><i/><i/></div>
         <div className="thinking-aurora" aria-hidden="true"><i /><i /><i /></div>
         <header className="topbar">
           <button className="menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open menu">☰</button>
           <div className={isTemporary ? "mode-pill temporary" : "mode-pill"}><span className={`mode-gem ${mode}`} /> {isTemporary ? "temporary chat" : activeSpace ? activeSpace.name : mode === "chat" ? "lumi chat" : `lumi ${mode}`}</div>
+          <div className={`mood-indicator mood-${mood}`}><span>✦</span>{moodCopy[mood]}</div>
           <div className="top-actions">
             <button className={`memory-pill ${memoryOn ? "on" : ""}`} onClick={() => setMemoryOpen(true)}>
               <span>◉</span> memory {memoryOn ? "on" : "off"}
@@ -744,7 +770,7 @@ export default function Home() {
             </div>
           ) : (
             <div className="conversation" aria-live="polite">
-              <div className="conversation-title"><LumiMark small /><span><small>today with lumi</small><strong>{activeChat?.title ?? `${mode} session`}</strong></span></div>
+              <div className="conversation-title"><LumiMark small /><span><small>today with lumi · {moodCopy[mood]}</small><strong>{activeChat?.title ?? `${mode} session`}</strong></span></div>
               {messages.map((message, index) => (
                 <div key={index} className={`message ${message.role}`}>
                   {message.role === "lumi" && <LumiMark small />}
@@ -769,9 +795,9 @@ export default function Home() {
               ))}
               {isThinking && (
                 <div className="message lumi thinking-message">
-                  <LumiMark small />
+                  <LumiMark small thinking />
                   <div className="thinking-card" role="status" aria-live="polite">
-                    <div className="thinking-orb"><span>✦</span></div>
+                    <div className="thinking-orb"><span>✦</span><i/><i/></div>
                     <div className="thinking-copy">
                       <strong>{thinkingStages[thinkingStage].label}</strong>
                       <span>{thinkingStages[thinkingStage].detail}</span>
