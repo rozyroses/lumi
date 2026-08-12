@@ -16,6 +16,10 @@ type Mood = "calm" | "bright" | "focused" | "tender" | "creative" | "urgent";
 type Profile = { id?: string; name: string; email: string };
 type Memory = { id: string; text: string; createdAt: number; updatedAt: number; spaceId?: string; status: "pending" | "approved" };
 type Onboarding = { name: string; pronouns: string; style: string; interests: string };
+type VoiceState = "idle" | "listening" | "speaking";
+type SpeechRecognitionResultLike = { isFinal: boolean; 0: { transcript: string } };
+type SpeechRecognitionEventLike = { results: ArrayLike<SpeechRecognitionResultLike> };
+type SpeechRecognitionLike = { continuous: boolean; interimResults: boolean; lang: string; start: () => void; stop: () => void; abort: () => void; onresult: ((event: SpeechRecognitionEventLike) => void) | null; onerror: ((event: { error: string }) => void) | null; onend: (() => void) | null };
 
 const CHATS_KEY = "lumi-chats-v1";
 const ACTIVE_CHAT_KEY = "lumi-active-chat-v1";
@@ -215,8 +219,15 @@ export default function Home() {
   const [localDataReady, setLocalDataReady] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
   const [syncState, setSyncState] = useState<"device" | "syncing" | "synced" | "error">("device");
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceMuted, setVoiceMuted] = useState(false);
+  const [lastSpokenReply, setLastSpokenReply] = useState("");
   const syncTimer = useRef<number | null>(null);
   const requestController = useRef<AbortController | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const voiceFinalRef = useRef("");
+  const voiceReplyPendingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const copy = modeCopy[mode];
@@ -369,6 +380,11 @@ export default function Home() {
     }, 1700);
     return () => window.clearInterval(timer);
   }, [isThinking]);
+
+  useEffect(() => () => {
+    recognitionRef.current?.abort();
+    window.speechSynthesis?.cancel();
+  }, []);
 
   function updateActive(nextMessages: Message[]) {
     setChats((current) => current.map((chat) => chat.id === activeChatId ? {
@@ -661,6 +677,8 @@ export default function Home() {
       const result = await response.json();
       if (!response.ok || typeof result.reply !== "string") throw new Error(result.error || "Lumi could not answer.");
       updateActive([...nextMessages, { role: "lumi", text: result.reply }]);
+      if (voiceReplyPendingRef.current && !voiceMuted) speakReply(result.reply);
+      voiceReplyPendingRef.current = false;
     } catch (error) {
       if ((error as Error).name !== "AbortError") {
         console.error("Lumi chat request failed", error);
@@ -710,6 +728,89 @@ export default function Home() {
   }
 
   function stopReply() { requestController.current?.abort(); showToast("generation stopped ✦"); }
+
+  function speechRecognitionConstructor() {
+    const speechWindow = window as typeof window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
+    return speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
+  }
+
+  function speakReply(text: string) {
+    if (!("speechSynthesis" in window) || voiceMuted) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text.replace(/[*_#`>\[\]]/g, " "));
+    const voices = window.speechSynthesis.getVoices();
+    utterance.voice = voices.find((voice) => /samantha|ava|aria|zira|female/i.test(voice.name)) || voices.find((voice) => voice.lang.startsWith("en")) || null;
+    utterance.rate = 1.02;
+    utterance.pitch = 1.06;
+    utterance.onstart = () => setVoiceState("speaking");
+    utterance.onend = () => setVoiceState("idle");
+    utterance.onerror = () => setVoiceState("idle");
+    setLastSpokenReply(text);
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function stopVoice() {
+    recognitionRef.current?.stop();
+    window.speechSynthesis?.cancel();
+    setVoiceState("idle");
+  }
+
+  function toggleMute() {
+    setVoiceMuted((current) => {
+      if (!current) window.speechSynthesis?.cancel();
+      return !current;
+    });
+    setVoiceState("idle");
+  }
+
+  function startVoice() {
+    if (voiceState !== "idle") return stopVoice();
+    const Recognition = speechRecognitionConstructor();
+    if (!Recognition) return showToast("voice input isn’t supported in this browser yet");
+    window.speechSynthesis?.cancel();
+    const recognition = new Recognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognitionRef.current = recognition;
+    voiceFinalRef.current = "";
+    setVoiceTranscript("");
+    recognition.onresult = (event) => {
+      let finalText = "";
+      let interimText = "";
+      for (let index = 0; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        if (result.isFinal) finalText += result[0].transcript;
+        else interimText += result[0].transcript;
+      }
+      if (finalText.trim()) voiceFinalRef.current = `${voiceFinalRef.current} ${finalText}`.trim();
+      const transcript = `${voiceFinalRef.current} ${interimText}`.trim();
+      setVoiceTranscript(transcript);
+      setInput(transcript);
+    };
+    recognition.onerror = (event) => {
+      recognitionRef.current = null;
+      setVoiceState("idle");
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") showToast("microphone permission is off — you can keep typing");
+      else if (event.error !== "no-speech" && event.error !== "aborted") showToast("Lumi couldn’t hear that clearly — try again");
+    };
+    recognition.onend = () => {
+      recognitionRef.current = null;
+      setVoiceState("idle");
+      const transcript = voiceFinalRef.current.trim();
+      if (transcript) {
+        voiceReplyPendingRef.current = true;
+        void submit(transcript);
+      }
+    };
+    try {
+      recognition.start();
+      setVoiceState("listening");
+    } catch {
+      setVoiceState("idle");
+      showToast("Lumi couldn’t start the microphone");
+    }
+  }
   function copyMessage(text: string) { void navigator.clipboard.writeText(text).then(() => showToast("copied ✦")); }
   function regenerateMessage(index: number) {
     const base = messages.slice(0, index);
@@ -898,6 +999,7 @@ export default function Home() {
             {(!isOnline || chatError) && <div className="recovery-banner" role="alert"><span>{isOnline ? "↻" : "⌁"}</span><div><strong>{isOnline ? "Lumi hit a connection snag" : "you’re offline"}</strong><small>{chatError || "regular chats stay on this device until you reconnect."}</small></div>{lastFailedMessages && isOnline && <button onClick={() => void generateReply(lastFailedMessages)}>try again</button>}</div>}
             {isTemporary && <div className="temporary-notice"><span>◌</span><strong>temporary chat</strong> this conversation won’t be saved, synced, or used for memory.</div>}
             {attachments.length > 0 && <div className="attachment-tray" aria-label="Selected attachments">{attachments.map((attachment) => <div className="attachment-chip" key={attachment.id}>{attachment.kind === "image" && attachment.dataUrl ? <img src={attachment.dataUrl} alt="" /> : <span>{attachment.kind === "pdf" ? "PDF" : attachment.kind === "document" ? "DOC" : "TXT"}</span>}<div><strong>{attachment.name}</strong><small>{attachment.pageCount ? `${attachment.pageCount} pages · ` : ""}{formatBytes(attachment.size)}</small></div><button type="button" onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))} aria-label={`Remove ${attachment.name}`}>×</button></div>)}</div>}
+            {voiceState !== "idle" && <div className={`voice-presence ${voiceState}`} role="status" aria-live="polite"><span className="voice-orb">{voiceState === "listening" ? "⌁" : "✦"}</span><div><strong>{voiceState === "listening" ? "i’m listening" : "lumi is speaking"}</strong><small>{voiceState === "listening" ? (voiceTranscript || "say what’s on your mind…") : "tap stop whenever you’re ready"}</small></div><span className="voice-wave" aria-hidden="true"><i/><i/><i/><i/></span><button type="button" onClick={stopVoice}>stop</button></div>}
             <form className="composer" onSubmit={handleSubmit}>
               <input ref={fileInputRef} className="file-input" type="file" accept={ACCEPTED_ATTACHMENTS} multiple onChange={chooseAttachments} />
               <button type="button" className="add-button" onClick={() => fileInputRef.current?.click()} aria-label="Add attachment" disabled={attachmentsBusy}>{attachmentsBusy ? "…" : "＋"}</button>
@@ -908,10 +1010,11 @@ export default function Home() {
                 placeholder={mode === "learn" ? "what do you want to understand?" : mode === "create" ? "what should we make?" : "talk to lumi..."}
                 aria-label="Message Lumi"
               />
-              <button type="button" className="voice-button" onClick={() => showToast("voice chat is coming soon ✦")} aria-label="Use voice">⌇</button>
+              <button type="button" className={`voice-button ${voiceState === "listening" ? "active" : ""}`} onClick={startVoice} aria-label={voiceState === "listening" ? "Stop listening" : "Talk to Lumi"} aria-pressed={voiceState === "listening"}>⌇</button>
               {isThinking ? <button type="button" className="send-button stop" onClick={stopReply} aria-label="Stop generating">■</button> : <button type="submit" className="send-button" disabled={attachmentsBusy || (!input.trim() && !attachments.length)} aria-label="Send message">↑</button>}
             </form>
-            <p className="demo-note"><span>✦</span> images, PDFs, Word, and text · up to 4 files, 8 MB each</p>
+            <div className="voice-controls"><button type="button" onClick={toggleMute} aria-pressed={voiceMuted}>{voiceMuted ? "unmute replies" : "mute replies"}</button>{lastSpokenReply && <button type="button" onClick={() => speakReply(lastSpokenReply)} disabled={voiceMuted}>replay last reply</button>}<span>audio is processed by your browser and never saved</span></div>
+            <p className="demo-note"><span>✦</span> voice, images, PDFs, Word, and text · up to 4 files, 8 MB each</p>
           </div>
         </div>
       </section>

@@ -12,11 +12,14 @@ describe("critical Lumi interface contracts", () => {
     ["user chat bubble", 'className="user-bubble"'],
     ["accessible thinking status", 'role="status" aria-live="polite"'],
     ["thinking presence", 'className="thinking-dots"'],
+    ["push-to-talk voice control", 'aria-label={voiceState === "listening" ? "Stop listening" : "Talk to Lumi"}'],
+    ["private voice notice", "audio is processed by your browser and never saved"],
+    ["accessible voice status", 'className={`voice-presence ${voiceState}`} role="status" aria-live="polite"'],
   ])("keeps the %s", (_label, marker) => {
     expect(app).toContain(marker);
   });
 
-  it.each([".user-bubble>p", ".thinking-card", ".attachment-tray", ".temporary-notice"])(
+  it.each([".user-bubble>p", ".thinking-card", ".attachment-tray", ".temporary-notice", ".voice-presence", ".voice-controls"])(
     "keeps critical responsive styling for %s",
     (selector) => expect(css).toContain(selector),
   );
