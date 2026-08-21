@@ -1,0 +1,6 @@
+name = "ebg-studio-lyrics"
+main = "src/index.ts"
+compatibility_date = "2026-08-21"
+
+[vars]
+ALLOWED_ORIGIN = "https://studio.ebgplus.app"
