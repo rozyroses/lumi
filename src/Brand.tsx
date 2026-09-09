@@ -1,0 +1,1 @@
+export default function Brand({compact=false}:{compact?:boolean}){return <span className={`unity-wordmark ${compact?'compact':''}`}><img src="/lumi/unity-wordmark.webp" alt="Unity"/><span>COLLEGE OF THE ARTS</span></span>;}

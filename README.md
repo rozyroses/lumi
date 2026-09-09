@@ -1,3 +1,9 @@
+# Unity brand and public homepage
+
+Unity now opens on an interactive public homepage with major tabs, a sample knowledge check, a creative-interest path finder, FAQ accordions, and direct student-account/campus entry. Public homepage and all student surfaces share the navy, blue, and lime design system: courses, tutoring, practice, grades, services, onboarding, authentication, memory, preferences, and retained creative tools. Major tabs support arrow keys, account dialogs contain keyboard focus, and campus section navigation supports browser back/forward.
+
+The original Unity script wordmark is inspired by the supplied baseball-script reference. It is artwork, not the exact reference font or an installed typeface. Wordmark and illustrative creative-studio photography were generated for this project and optimized as WebP. Source images remain outside the repo; the web-ready assets are tracked in public. No social sharing card was added.
+
 # Unity student platform
 
 Unity now offers student sign-up with major selection, three foundation major pathways, a major-specific campus sequence, built-in Lumi advising, untimed practice checks, practice GPA, downloadable personal learning records, and private AI student-service conversations with open/closed state. The existing Supabase account and per-user journal sync remain the persistence layer; no database migration is required. Major selection at sign-up is stored in auth metadata, and later changes use an account-isolated profile journal.

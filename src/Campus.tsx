@@ -1,13 +1,14 @@
+import Brand from "./Brand";
 import LessonSession from './LessonSession';
 import StudentPortal from './StudentPortal';
 import { getMajor, services } from './student';
 import { useEffect, useRef, useState } from 'react';
 import { courses, journalMarker, lessonMarker, readJournal, type Course, type JournalMessage } from './learning';
 import './campus.css';
-type Props = { signedIn:boolean; initialMajor?:string; onSignup:()=>void; name?: string; ready: boolean; sync: string; journals: {messages: JournalMessage[]}[]; onRecord: (course: Course, text: string) => void; onTutor: (prompt?: string) => void; onAccount: () => void; onSettings: () => void; onLessonSave: (marker: string, title: string, messages: JournalMessage[]) => void; onLessonReply: (messages: JournalMessage[], signal: AbortSignal) => Promise<string> };
-export default function Campus({ name, signedIn, initialMajor, onSignup, ready, sync, journals, onRecord, onTutor: onLegacyTutor, onAccount, onSettings, onLessonSave, onLessonReply }: Props) {
+type Props = { initialView?:"campus"|"majors"|"courses"; onHome:()=>void; signedIn:boolean; initialMajor?:string; onSignup:()=>void; name?: string; ready: boolean; sync: string; journals: {messages: JournalMessage[]}[]; onRecord: (course: Course, text: string) => void; onTutor: (prompt?: string) => void; onAccount: () => void; onSettings: () => void; onLessonSave: (marker: string, title: string, messages: JournalMessage[]) => void; onLessonReply: (messages: JournalMessage[], signal: AbortSignal) => Promise<string> };
+export default function Campus({ initialView="campus", onHome, name, signedIn, initialMajor, onSignup, ready, sync, journals, onRecord, onTutor: onLegacyTutor, onAccount, onSettings, onLessonSave, onLessonReply }: Props) {
  const [lessonView,setLessonView] = useState<'conversation'|'notes'>('conversation');
- const [view,setView] = useState<'campus'|'courses'|'projects'|'majors'|'practice'|'grades'|'services'>('campus');
+ const [view,setView] = useState<'campus'|'courses'|'projects'|'majors'|'practice'|'grades'|'services'>(initialView);
  const [selected,setSelected] = useState<Course|null>(null);
  const [lessonIndex,setLessonIndex] = useState(0);
  const [answer,setAnswer] = useState<number|null>(null);
@@ -28,15 +29,19 @@ export default function Campus({ name, signedIn, initialMajor, onSignup, ready, 
  const completed = pathCourses.reduce((sum,c)=>sum+c.lessons.filter(l=>journal(c).completed.has(l.title)).length,0);
  const active = pathCourses.find(c=>journal(c).completed.size>0 && journal(c).completed.size<c.lessons.length) || pathCourses.find(c=>journal(c).completed.size<c.lessons.length) || pathCourses[0];
  const open = (course: Course, project = false) => {setLessonView('conversation');setSelected(course);setLessonIndex(project ? -1 : Math.max(0,course.lessons.findIndex(l=>!journal(course).completed.has(l.title))));setAnswer(null);setDraft(journal(course).draft);setSaved(false);};
- const navigate = (next: typeof view) => {setView(next);setSelected(null);setMenu(false);};
+ const navigate = (next: typeof view) => {setView(next);setSelected(null);setMenu(false);window.history.pushState(null,"",`#campus/${next}`);window.scrollTo(0,0);};
+ useEffect(()=>{
+  const restore=()=>{const route=window.location.hash.split('/')[1];if(['campus','courses','projects','majors','practice','grades','services'].includes(route)){setView(route as typeof view);setSelected(null);setMenu(false);}};
+  restore();window.addEventListener('popstate',restore);return ()=>window.removeEventListener('popstate',restore);
+ },[]);
  const lesson = selected && lessonIndex >= 0 ? selected.lessons[lessonIndex] : null;
  return <main className="unity-shell">
   <aside className={`unity-sidebar ${menu?'is-open':''}`}>
-   <button className="unity-brand" onClick={()=>navigate('campus')} aria-label="Unity campus home"><span className="unity-monogram">u.</span><span>unity<small>college of the arts</small></span></button>
+   <button className="unity-brand" onClick={onHome} aria-label="Unity website home"><Brand/></button>
    <div className="unity-term">THE CREATIVE CAMPUS <span>01</span></div>
    <nav aria-label="Campus navigation">{([['campus','◫','My campus'],['courses','▤','Courses'],['projects','✎','Projects'],['majors','◇','Majors'],['practice','⌁','Practice'],['grades','▥','Grades'],['services','♡','Student services']] as const).map(([id,icon,label])=><button key={id} aria-current={view===id?'page':undefined} className={view===id?'selected':''} onClick={()=>navigate(id)}><span>{icon}</span>{label}</button>)}<button onClick={()=>onTutor()}><span>✦</span>Lumi advisor</button></nav>
    <div className="unity-sidebar-note"><span>LEARN. MAKE. BECOME.</span><p>Your next idea<br/>starts here.</p><button onClick={()=>onTutor('Help me choose a creative project for Unity College of the Arts. Ask about my interests and experience first.')}>Find your starting point ↗</button></div>
-   <button className="unity-settings" onClick={onSettings}>Settings & preferences</button>
+   <button className="unity-front-home" onClick={onHome}>← Unity home</button><button className="unity-settings" onClick={onSettings}>Settings & preferences</button>
    <button className="unity-profile" onClick={onAccount}><span>{(name||'G')[0].toUpperCase()}</span><div>{name||'Guest learner'}<small>{name?'Your account':'Sign in to sync your work'}</small></div></button>
   </aside>
   {menu&&<button className="unity-scrim" aria-label="Close navigation" onClick={()=>setMenu(false)}/>}

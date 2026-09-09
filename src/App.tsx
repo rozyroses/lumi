@@ -1,6 +1,8 @@
 "use client";
 
 import Campus from "./Campus";
+import FrontPage from "./FrontPage";
+import Brand from "./Brand";
 import { majors, getMajor } from "./student";
 import { journalMarker, type Course, type JournalMessage } from "./learning";
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -125,25 +127,14 @@ const modeCopy = {
 function LumiMark({ small = false, thinking = false }: { small?: boolean; thinking?: boolean }) {
   return (
     <div className={`${small ? "lumi-mark small" : "lumi-mark"}${thinking ? " avatar-thinking" : ""}`} aria-label="Lumi">
-      <img src="/lumi/lumi-avatar.png" alt="" />
+      <span className="unity-lumi-glyph" aria-hidden="true">✦</span>
       <span className="avatar-spark">✦</span>
     </div>
   );
 }
 
 function LumiWordmark({ compact = false }: { compact?: boolean }) {
-  const logoSrc = "/lumi/lumi-logo.png";
-  return (
-    <img
-      className={compact ? "lumi-wordmark compact" : "lumi-wordmark"}
-      src={logoSrc}
-      alt="lumi"
-      onError={(event) => {
-        const fallback = "/lumi/public/lumi-logo.png";
-        if (!event.currentTarget.src.endsWith(fallback)) event.currentTarget.src = fallback;
-      }}
-    />
-  );
+  return <span className="modal-brand-plaque"><Brand compact={compact}/></span>;
 }
 
 function readAsDataUrl(file: File) {
@@ -182,7 +173,8 @@ function formatBytes(bytes: number) {
 }
 
 export default function Home() {
-  const [screen, setScreen] = useState<"home" | "app">("home");
+  const [screen, setScreen] = useState<"front" | "home" | "app">(() => window.location.hash.startsWith("#campus") ? "home" : "front");
+  const [campusEntry, setCampusEntry] = useState<"campus" | "majors" | "courses">("campus");
   const [mode, setMode] = useState<Mode>("chat");
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -248,6 +240,37 @@ export default function Home() {
   });
   const latestUserText = [...messages].reverse().find((message) => message.role === "user")?.text || "";
   const mood = detectMood(input || latestUserText, mode);
+
+  useEffect(() => { document.documentElement.dataset.unityTheme = theme; }, [theme]);
+  useEffect(() => {
+    if(screen === "home" && !window.location.hash.startsWith("#campus"))window.history.replaceState(null,"","#campus/campus");
+    if(screen === "front" && window.location.hash.startsWith("#campus"))window.history.replaceState(null,"","#");
+  }, [screen]);
+
+  useEffect(() => {
+    const navigate = () => {
+      if (window.location.hash.startsWith("#campus")) { setScreen("home"); }
+      else if (!window.location.hash || window.location.hash === "#") setScreen("front");
+    };
+    window.addEventListener("popstate",navigate);
+    return () => window.removeEventListener("popstate",navigate);
+  }, []);
+
+  useEffect(() => {
+    const modal = document.querySelector<HTMLElement>(".modal-backdrop .modal-card");
+    if (!modal) return;
+    const previous = document.activeElement as HTMLElement | null;
+    modal.setAttribute("role","dialog"); modal.setAttribute("aria-modal","true");
+    const heading=modal.querySelector("h2"); if(heading)modal.setAttribute("aria-label",heading.textContent || "Unity settings");
+    const items=()=>Array.from(modal.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href]')).filter(el=>el.getClientRects().length>0);
+    items()[0]?.focus();
+    const key=(event:KeyboardEvent)=>{
+      if(event.key === "Tab") {const list=items();const first=list[0],last=list.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}
+      if(event.key === "Escape") {setAuthOpen(false);setMemoryOpen(false);setThemeOpen(false);setSettingsOpen(false);setAccountOpen(false);setSpaceEditorOpen(false);if(onboardingOpen)skipOnboarding();}
+    };
+    document.addEventListener("keydown",key);
+    return ()=>{document.removeEventListener("keydown",key);previous?.focus();};
+  }, [authOpen,memoryOpen,themeOpen,settingsOpen,accountOpen,spaceEditorOpen,onboardingOpen,screen]);
 
   useEffect(() => {
     const online = () => { setIsOnline(true); setChatError(""); };
@@ -841,8 +864,8 @@ export default function Home() {
   }
 
   const overlays = <>
-    {onboardingOpen && <div className="modal-backdrop onboarding-backdrop"><form className="modal-card onboarding-card" onSubmit={finishOnboarding}><p className="modal-kicker">meet lumi</p><h2>how should we work together?</h2><p className="onboarding-intro">a few quick choices help Lumi support you without taking over. you can change all of this later.</p><label>what should Lumi call you?<input name="name" defaultValue={profile?.name || ""} placeholder="your name" required autoFocus /></label><label>pronouns <span>(optional)</span><input name="pronouns" placeholder="she/her, he/him, they/them…" /></label><label>what kind of support feels best?<select name="style" defaultValue="warm and playful"><option value="warm and playful">warm + playful</option><option value="direct and concise">direct + concise</option><option value="patient and detailed">patient + detailed</option><option value="creative and energetic">creative + energetic</option></select></label><label>what matters in your world? <span>(optional)</span><textarea name="interests" placeholder="music, school, people, goals, projects…" /></label><div className="onboarding-actions"><button type="button" className="text-button" onClick={skipOnboarding}>skip for now</button><button className="modal-primary">start together ✦</button></div></form></div>}
-    {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="modal-card auth-card" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}>×</button><p className="modal-kicker">unity student account</p><h2>{authMode === "signup" ? "join Unity College of the Arts" : "welcome back to Unity"}</h2><p className="beta-note">sign in to keep your coursework, projects, and Lumi conversations together.</p>{authMode === "signup" && <label>your name<input name="name" defaultValue={profile?.name} required placeholder="what should lumi call you?" autoComplete="name" /></label>}<label>email<input name="email" type="email" defaultValue={profile?.email} required placeholder="you@example.com" autoComplete="email" /></label>{authMode === "signup" && <label>your major<select name="major" required><option value="">choose a learning path</option>{majors.map(major => <option key={major.id} value={major.id}>{major.title}</option>)}</select><small>Foundation learning pathways · no accredited degree or credits awarded.</small></label>}<label>password<input name="password" type="password" required minLength={6} placeholder="at least 6 characters" autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></label>{authError && <p className="auth-error" role="alert">{authError}</p>}<button className="modal-primary" disabled={authBusy}>{authBusy ? "one sec..." : authMode === "signup" ? "create account ✦" : "log in ✦"}</button><button type="button" className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthError(""); }}>{authMode === "signup" ? "already have an account? log in" : "new here? create an account"}</button></form></div>}
+    {onboardingOpen && screen !== "front" && <div className="modal-backdrop onboarding-backdrop"><form className="modal-card onboarding-card" onSubmit={finishOnboarding}><p className="modal-kicker">meet lumi</p><h2>how should we work together?</h2><p className="onboarding-intro">a few quick choices help Lumi support you without taking over. you can change all of this later.</p><label>what should Lumi call you?<input name="name" defaultValue={profile?.name || ""} placeholder="your name" required autoFocus /></label><label>pronouns <span>(optional)</span><input name="pronouns" placeholder="she/her, he/him, they/them…" /></label><label>what kind of support feels best?<select name="style" defaultValue="warm and playful"><option value="warm and playful">warm + playful</option><option value="direct and concise">direct + concise</option><option value="patient and detailed">patient + detailed</option><option value="creative and energetic">creative + energetic</option></select></label><label>what matters in your world? <span>(optional)</span><textarea name="interests" placeholder="music, school, people, goals, projects…" /></label><div className="onboarding-actions"><button type="button" className="text-button" onClick={skipOnboarding}>skip for now</button><button className="modal-primary">start together ✦</button></div></form></div>}
+    {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="modal-card auth-card" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}>×</button><div className="modal-brand-plaque"><Brand compact /></div><p className="modal-kicker">unity student account</p><h2>{authMode === "signup" ? "join Unity College of the Arts" : "welcome back to Unity"}</h2><p className="beta-note">sign in to keep your coursework, projects, and Lumi conversations together.</p>{authMode === "signup" && <label>your name<input name="name" defaultValue={profile?.name} required placeholder="what should lumi call you?" autoComplete="name" /></label>}<label>email<input name="email" type="email" defaultValue={profile?.email} required placeholder="you@example.com" autoComplete="email" /></label>{authMode === "signup" && <label>your major<select name="major" required><option value="">choose a learning path</option>{majors.map(major => <option key={major.id} value={major.id}>{major.title}</option>)}</select><small>Foundation learning pathways · no accredited degree or credits awarded.</small></label>}<label>password<input name="password" type="password" required minLength={6} placeholder="at least 6 characters" autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></label>{authError && <p className="auth-error" role="alert">{authError}</p>}<button className="modal-primary" disabled={authBusy}>{authBusy ? "one sec..." : authMode === "signup" ? "create account ✦" : "log in ✦"}</button><button type="button" className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthError(""); }}>{authMode === "signup" ? "already have an account? log in" : "new here? create an account"}</button></form></div>}
     {memoryOpen && <div className="modal-backdrop" onMouseDown={() => setMemoryOpen(false)}><div className="modal-card memory-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setMemoryOpen(false)}>×</button><p className="modal-kicker">lumi memory</p><h2>memory, with manners</h2><div className="memory-control"><span><strong>use memory across chats</strong><small>approved memories can help in future chats</small></span><button className={memoryOn ? "toggle on" : "toggle"} onClick={() => setMemoryOn(!memoryOn)}><i /></button></div><div className="memory-tabs"><button className={memoryTab === "saved" ? "active" : ""} onClick={() => setMemoryTab("saved")}>saved <span>{memories.filter((item) => item.status === "approved").length}</span></button><button className={memoryTab === "review" ? "active" : ""} onClick={() => setMemoryTab("review")}>review <span>{memories.filter((item) => item.status === "pending").length}</span></button></div><div className="memory-list">{memories.filter((item) => item.status === (memoryTab === "saved" ? "approved" : "pending")).length ? memories.filter((item) => item.status === (memoryTab === "saved" ? "approved" : "pending")).map((memory) => <div className="memory-item" key={memory.id}><div><p>{memory.text}</p><small>{memory.spaceId ? spaces.find((space) => space.id === memory.spaceId)?.name || "Space memory" : "all chats"}</small></div><div className="memory-actions">{memory.status === "pending" && <button className="approve" onClick={() => setMemories((current) => current.map((item) => item.id === memory.id ? { ...item, status: "approved", updatedAt: Date.now() } : item))}>save</button>}<button onClick={() => updateMemory(memory)} aria-label="Edit memory">✎</button><button onClick={() => deleteMemory(memory)} aria-label="Delete memory">×</button></div></div>) : <div className="empty-memory">{memoryTab === "review" ? "no suggestions waiting. Lumi will ask before remembering new details ✦" : "nothing saved yet. approved details will appear here ✦"}</div>}</div>{memories.length > 0 && <button className="danger-link" onClick={clearAllMemories}>clear all memory</button>}</div></div>}
     {themeOpen && <ThemePicker theme={theme} setTheme={chooseTheme} close={() => setThemeOpen(false)} />}
     {accountOpen && <div className="modal-backdrop" onMouseDown={() => setAccountOpen(false)}><div className="modal-card account-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setAccountOpen(false)}>×</button><p className="modal-kicker">account & security</p><h2>you’re in control</h2><section className="settings-section"><h3>email</h3><form className="account-form" onSubmit={changeEmail}><input name="email" type="email" defaultValue={profile?.email} required aria-label="New email" /><button className="settings-button primary" disabled={accountBusy}>change email</button></form><button className="settings-button" disabled={accountBusy} onClick={() => void sendPasswordReset()}>send password reset email</button></section><section className="settings-section"><h3>your data</h3><button className="settings-button" onClick={exportMyData}>download my data</button><button className="danger-button" disabled={accountBusy} onClick={() => void deleteAccount()}>permanently delete account</button>{accountError && <p className="auth-error" role="alert">{accountError}</p>}</section></div></div>}
@@ -888,8 +911,13 @@ export default function Home() {
     setTimeout(() => inputRef.current?.focus(), 50);
   }
 
+  function enterCampus(view: "campus" | "majors" | "courses" = "campus") {
+    setCampusEntry(view); setScreen("home"); window.history.pushState(null,"",`#campus/${view}`); window.scrollTo(0,0);
+  }
+  if (screen === "front") return <><FrontPage signedIn={Boolean(profile?.id)} onEnter={enterCampus} onSignup={() => openAuth("signup")} onLogin={() => openAuth("login")} />{overlays}{toast && <div className="toast" role="status">{toast}</div>}</>;
+
   if (screen === "home") return <>
-    <Campus key={dataOwnerId || "loading"} name={profile?.name} signedIn={Boolean(profile?.id)} initialMajor={profile?.majorId} onSignup={() => openAuth("signup")} ready={localDataReady} sync={syncState} journals={localDataReady ? chats : []} onRecord={recordCoursework} onLessonSave={saveLessonSession} onLessonReply={replyToLesson} onTutor={openTutor} onAccount={() => profile ? setSettingsOpen(true) : openAuth("login")} onSettings={() => setSettingsOpen(true)} />
+    <Campus initialView={campusEntry} onHome={() => {setScreen("front"); window.history.pushState(null,"","#");window.scrollTo(0,0);}} key={dataOwnerId || "loading"} name={profile?.name} signedIn={Boolean(profile?.id)} initialMajor={profile?.majorId} onSignup={() => openAuth("signup")} ready={localDataReady} sync={syncState} journals={localDataReady ? chats : []} onRecord={recordCoursework} onLessonSave={saveLessonSession} onLessonReply={replyToLesson} onTutor={openTutor} onAccount={() => profile ? setSettingsOpen(true) : openAuth("login")} onSettings={() => setSettingsOpen(true)} />
     {overlays}
     {toast && <div className="toast" role="status">{toast}</div>}
   </>;
