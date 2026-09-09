@@ -5,13 +5,13 @@
   "start_url": "/lumi/",
   "scope": "/lumi/",
   "display": "standalone",
-  "background_color": "#171122",
-  "theme_color": "#2448ed",
+  "background_color": "#11182b",
+  "theme_color": "#11182b",
   "icons": [
     {
-      "src": "/lumi/lumi-logo.png",
-      "sizes": "512x512",
-      "type": "image/png",
+      "src": "/lumi/unity-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
       "purpose": "any"
     }
   ]
