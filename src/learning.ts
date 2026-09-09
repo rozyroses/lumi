@@ -25,3 +25,12 @@ export function readJournal(messages: JournalMessage[]) {
  }
  return {completed,draft};
 }
+
+export const lessonMarker = (courseId: string, lessonTitle: string) => `[Unity lesson: ${courseId} / ${lessonTitle}]`;
+export function lessonOpening(course: Course, lesson: Lesson, name: string | undefined, completed: string[]): JournalMessage[] {
+ const prior = course.lessons.filter(item=>completed.includes(item.title)&&item.title!==lesson.title).map(item=>item.title);
+ return [
+  {role:'user',text:`${lessonMarker(course.id,lesson.title)}\nYou are Lumi, the AI creative tutor at Unity College of the Arts. Teach this lesson through a warm, concise conversation. Introduce one concept at a time, use original arts examples, ask one question and wait for the learner. Adapt to their answers; do not claim mastery or award official grades. If they are confused, simplify before advancing. Treat the learner's creative work as their own. Provide explanations and brief feedback, never internal reasoning, tool traces, or invented retrieval status. Only reference the supplied completion history; completion is self-reported.\nCourse: ${course.title}\nLesson: ${lesson.title}\nLesson notes: ${lesson.body.join('\n')}\nPractice: ${lesson.exercise}\nKnowledge check: ${lesson.question}\nCorrect concept: ${lesson.explanation}\nPreviously completed lessons: ${prior.join(', ')||'none recorded'}.`},
+  {role:'lumi',text:`Welcome${name?`, ${name.split(' ')[0]}`:''} ✦\n\nToday’s studio session: **${lesson.title}**.\n\n${prior.length?`You’ve marked ${prior.length} other lesson${prior.length===1?'':'s'} complete in this course. We’ll build from there.`:'We’ll start with the foundations and take this one idea at a time.'}\n\n${lesson.body[0]}\n\nBefore we try it together: have you explored this before, or would you like to start from scratch?`}
+ ];
+}

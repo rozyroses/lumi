@@ -1,7 +1,7 @@
 "use client";
 
 import Campus from "./Campus";
-import { journalMarker, type Course } from "./learning";
+import { journalMarker, type Course, type JournalMessage } from "./learning";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -239,7 +239,7 @@ export default function Home() {
   const activeSpace = spaces.find((space) => space.id === activeSpaceId);
   const searchNeedle = chatSearch.trim().toLowerCase();
   const visibleChats = chats.filter((chat) => {
-    if (chat.messages[0]?.text.startsWith("[Unity coursework: ")) return false;
+    if (chat.messages[0]?.text.startsWith("[Unity coursework: ") || chat.messages[0]?.text.startsWith("[Unity lesson: ")) return false;
     if (chat.temporary || Boolean(chat.archived) !== showArchived) return false;
     if (activeSpaceId && chat.spaceId !== activeSpaceId) return false;
     if (!searchNeedle) return true;
@@ -276,11 +276,12 @@ export default function Home() {
       const saved = JSON.parse(get(CHATS_KEY) || "[]") as Chat[];
       const preferences = JSON.parse(get(CHAT_PREFS_KEY) || "{}") as Record<string, { pinned?: boolean; archived?: boolean }>;
       const restored = saved.map((chat) => ({ ...chat, ...preferences[chat.id] }));
-      const selected = restored.find((chat) => chat.id === get(ACTIVE_CHAT_KEY)) ?? restored.find((chat) => !chat.archived) ?? restored[0];
+      const conversational = restored.filter(chat => !chat.messages[0]?.text.startsWith("[Unity "));
+      const selected = conversational.find((chat) => chat.id === get(ACTIVE_CHAT_KEY)) ?? conversational.find((chat) => !chat.archived) ?? conversational[0];
       if (selected) {
         setChats(restored); setActiveChatId(selected.id); setMode(selected.mode);
       } else {
-        const first = makeChat("chat"); setChats([first]); setActiveChatId(first.id); setMode("chat");
+        const first = makeChat("chat"); setChats([first, ...restored]); setActiveChatId(first.id); setMode("chat");
       }
       const savedSpaces = JSON.parse(get(SPACES_KEY) || "null") as Space[] | null;
       setSpaces(savedSpaces?.length ? savedSpaces : DEFAULT_SPACES);
@@ -856,6 +857,25 @@ export default function Home() {
     });
   }
 
+  function saveLessonSession(marker: string, title: string, messages: JournalMessage[]) {
+    if (!localDataReady) return;
+    setChats(current => {
+      const existing = current.find(chat => chat.messages[0]?.text.startsWith(marker));
+      if (existing) return current.map(chat => chat.id === existing.id ? {...chat, messages, updatedAt: Date.now()} : chat);
+      return [{...makeChat("learn"), title, messages}, ...current];
+    });
+  }
+
+  async function replyToLesson(messages: JournalMessage[], signal: AbortSignal): Promise<string> {
+    const response = await fetch("https://luni-gateway.roosevelt-wooden.workers.dev/chat", {
+      method: "POST", headers: {"Content-Type": "application/json"}, signal,
+      body: JSON.stringify({mode: "learn", space: null, messages: messages.map(message => ({role: message.role === "lumi" ? "assistant" : "user", content: message.text}))}),
+    });
+    const result = await response.json();
+    if (!response.ok || typeof result.reply !== "string" || !result.reply.trim()) throw new Error("Lesson reply unavailable");
+    return result.reply;
+  }
+
   function openTutor(prompt?: string) {
     if (isThinking) { setScreen("app"); return; }
     const next = makeChat("learn");
@@ -865,7 +885,7 @@ export default function Home() {
   }
 
   if (screen === "home") return <>
-    <Campus key={dataOwnerId || "loading"} name={profile?.name} ready={localDataReady} sync={syncState} journals={localDataReady ? chats : []} onRecord={recordCoursework} onTutor={openTutor} onAccount={() => profile ? setSettingsOpen(true) : openAuth("login")} onSettings={() => setSettingsOpen(true)} />
+    <Campus key={dataOwnerId || "loading"} name={profile?.name} ready={localDataReady} sync={syncState} journals={localDataReady ? chats : []} onRecord={recordCoursework} onLessonSave={saveLessonSession} onLessonReply={replyToLesson} onTutor={openTutor} onAccount={() => profile ? setSettingsOpen(true) : openAuth("login")} onSettings={() => setSettingsOpen(true)} />
     {overlays}
     {toast && <div className="toast" role="status">{toast}</div>}
   </>;

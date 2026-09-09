@@ -1,6 +1,6 @@
 # Unity College of the Arts · powered by Lumi
 
-Unity adds a creative learning campus to Lumi with three foundation courses, nine lessons, knowledge checks, self-reported completion, and editable project drafts. The campus is the default home; Lumi remains available as the study companion with its existing chat, voice, attachments, Spaces, accounts, and memory.
+Unity adds a creative learning campus to Lumi with three foundation courses, nine lessons, knowledge checks, self-reported completion, and editable project drafts. Lessons now open as guided conversations with a grounded welcome, creative examples, quick replies, saved back-and-forth tutoring, retry handling, and a notes/practice tab. Each lesson keeps its own conversation in the existing account-isolated storage. The campus is the default home; Lumi remains available as the study companion with its existing chat, voice, attachments, Spaces, accounts, and memory.
 
 Coursework uses dedicated private learning journals in the existing `lumi_chats` storage and its account isolation/sync. No new Supabase schema is required. Guest work stays on the current device; signed-in work uses the existing cloud sync. Journals are excluded from normal conversation history. Progress is self-reported, and AI project feedback is not an instructor grade. This release does not add instructor administration, official enrollment, grading, or submission workflows.
 
