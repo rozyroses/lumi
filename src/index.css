@@ -412,3 +412,9 @@ h1 { margin: 0; font-size: clamp(36px, 5vw, 59px); line-height: .98; letter-spac
   .memory-pill { display:none; }
   .message > p,.message-content { max-width:89%; }
 }
+
+/* Unity's companion workspace retains all Lumi modes and account tools. */
+.unity-return{border:0;background:none;color:var(--ink);font-size:18px;font-weight:700;padding:8px 0;cursor:pointer}
+.app-shell .nav-item,.app-shell .new-button,.app-shell .temporary-button,.app-shell .settings-launch,.app-shell .space-item{font-size:14px}
+.app-shell .message-content,.app-shell .user-bubble,.app-shell .composer input{font-size:16px}
+.app-shell .message-actions button,.app-shell .voice-controls,.app-shell .demo-note{font-size:12px}

@@ -1,12 +1,12 @@
 {
-  "name": "Lumi AI",
-  "short_name": "Lumi",
-  "description": "A playful personal AI companion with living moods, memory, Spaces, and creative tools.",
+  "name": "Unity College of the Arts",
+  "short_name": "Unity",
+  "description": "Creative courses, projects, and your Lumi study companion.",
   "start_url": "/lumi/",
   "scope": "/lumi/",
   "display": "standalone",
   "background_color": "#171122",
-  "theme_color": "#a986ff",
+  "theme_color": "#2448ed",
   "icons": [
     {
       "src": "/lumi/lumi-logo.png",

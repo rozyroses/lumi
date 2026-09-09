@@ -1,5 +1,7 @@
 "use client";
 
+import Campus from "./Campus";
+import { journalMarker, type Course } from "./learning";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -98,8 +100,8 @@ const modeCopy = {
     ],
   },
   learn: {
-    eyebrow: "learn it your way",
-    title: "what are we learning?",
+    eyebrow: "unity college of the arts · lumi studio",
+    title: "your next breakthrough starts here.",
     subtitle: "bring what’s confusing. we’ll slow it down and learn it your way.",
     starters: [
       ["⌁", "teach me a topic", "Explain it, check in, and adapt as we go"],
@@ -237,6 +239,7 @@ export default function Home() {
   const activeSpace = spaces.find((space) => space.id === activeSpaceId);
   const searchNeedle = chatSearch.trim().toLowerCase();
   const visibleChats = chats.filter((chat) => {
+    if (chat.messages[0]?.text.startsWith("[Unity coursework: ")) return false;
     if (chat.temporary || Boolean(chat.archived) !== showArchived) return false;
     if (activeSpaceId && chat.spaceId !== activeSpaceId) return false;
     if (!searchNeedle) return true;
@@ -531,7 +534,7 @@ export default function Home() {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       }
-      setAuthOpen(false); setScreen("app"); showToast(`welcome home, ${name} ✦`);
+      setAuthOpen(false); setScreen("home"); showToast(`welcome home, ${name} ✦`);
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "Lumi couldn't sign you in. try again.");
     } finally { setAuthBusy(false); }
@@ -836,29 +839,42 @@ export default function Home() {
 
   const overlays = <>
     {onboardingOpen && <div className="modal-backdrop onboarding-backdrop"><form className="modal-card onboarding-card" onSubmit={finishOnboarding}><p className="modal-kicker">meet lumi</p><h2>how should we work together?</h2><p className="onboarding-intro">a few quick choices help Lumi support you without taking over. you can change all of this later.</p><label>what should Lumi call you?<input name="name" defaultValue={profile?.name || ""} placeholder="your name" required autoFocus /></label><label>pronouns <span>(optional)</span><input name="pronouns" placeholder="she/her, he/him, they/them…" /></label><label>what kind of support feels best?<select name="style" defaultValue="warm and playful"><option value="warm and playful">warm + playful</option><option value="direct and concise">direct + concise</option><option value="patient and detailed">patient + detailed</option><option value="creative and energetic">creative + energetic</option></select></label><label>what matters in your world? <span>(optional)</span><textarea name="interests" placeholder="music, school, people, goals, projects…" /></label><div className="onboarding-actions"><button type="button" className="text-button" onClick={skipOnboarding}>skip for now</button><button className="modal-primary">start together ✦</button></div></form></div>}
-    {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="modal-card auth-card" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}>×</button><p className="modal-kicker">lumi account</p><h2>{authMode === "signup" ? "make Lumi yours" : "welcome back"}</h2><p className="beta-note">real Supabase accounts are here. your password is handled securely and never stored by Lumi.</p>{authMode === "signup" && <label>your name<input name="name" defaultValue={profile?.name} required placeholder="what should lumi call you?" autoComplete="name" /></label>}<label>email<input name="email" type="email" defaultValue={profile?.email} required placeholder="you@example.com" autoComplete="email" /></label><label>password<input name="password" type="password" required minLength={6} placeholder="at least 6 characters" autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></label>{authError && <p className="auth-error" role="alert">{authError}</p>}<button className="modal-primary" disabled={authBusy}>{authBusy ? "one sec..." : authMode === "signup" ? "create account ✦" : "log in ✦"}</button><button type="button" className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthError(""); }}>{authMode === "signup" ? "already have an account? log in" : "new here? create an account"}</button></form></div>}
+    {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="modal-card auth-card" onSubmit={saveProfile} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}>×</button><p className="modal-kicker">lumi account</p><h2>{authMode === "signup" ? "make Lumi yours" : "welcome back"}</h2><p className="beta-note">sign in to keep your coursework, projects, and Lumi conversations together.</p>{authMode === "signup" && <label>your name<input name="name" defaultValue={profile?.name} required placeholder="what should lumi call you?" autoComplete="name" /></label>}<label>email<input name="email" type="email" defaultValue={profile?.email} required placeholder="you@example.com" autoComplete="email" /></label><label>password<input name="password" type="password" required minLength={6} placeholder="at least 6 characters" autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></label>{authError && <p className="auth-error" role="alert">{authError}</p>}<button className="modal-primary" disabled={authBusy}>{authBusy ? "one sec..." : authMode === "signup" ? "create account ✦" : "log in ✦"}</button><button type="button" className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthError(""); }}>{authMode === "signup" ? "already have an account? log in" : "new here? create an account"}</button></form></div>}
     {memoryOpen && <div className="modal-backdrop" onMouseDown={() => setMemoryOpen(false)}><div className="modal-card memory-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setMemoryOpen(false)}>×</button><p className="modal-kicker">lumi memory</p><h2>memory, with manners</h2><div className="memory-control"><span><strong>use memory across chats</strong><small>approved memories can help in future chats</small></span><button className={memoryOn ? "toggle on" : "toggle"} onClick={() => setMemoryOn(!memoryOn)}><i /></button></div><div className="memory-tabs"><button className={memoryTab === "saved" ? "active" : ""} onClick={() => setMemoryTab("saved")}>saved <span>{memories.filter((item) => item.status === "approved").length}</span></button><button className={memoryTab === "review" ? "active" : ""} onClick={() => setMemoryTab("review")}>review <span>{memories.filter((item) => item.status === "pending").length}</span></button></div><div className="memory-list">{memories.filter((item) => item.status === (memoryTab === "saved" ? "approved" : "pending")).length ? memories.filter((item) => item.status === (memoryTab === "saved" ? "approved" : "pending")).map((memory) => <div className="memory-item" key={memory.id}><div><p>{memory.text}</p><small>{memory.spaceId ? spaces.find((space) => space.id === memory.spaceId)?.name || "Space memory" : "all chats"}</small></div><div className="memory-actions">{memory.status === "pending" && <button className="approve" onClick={() => setMemories((current) => current.map((item) => item.id === memory.id ? { ...item, status: "approved", updatedAt: Date.now() } : item))}>save</button>}<button onClick={() => updateMemory(memory)} aria-label="Edit memory">✎</button><button onClick={() => deleteMemory(memory)} aria-label="Delete memory">×</button></div></div>) : <div className="empty-memory">{memoryTab === "review" ? "no suggestions waiting. Lumi will ask before remembering new details ✦" : "nothing saved yet. approved details will appear here ✦"}</div>}</div>{memories.length > 0 && <button className="danger-link" onClick={clearAllMemories}>clear all memory</button>}</div></div>}
     {themeOpen && <ThemePicker theme={theme} setTheme={chooseTheme} close={() => setThemeOpen(false)} />}
     {accountOpen && <div className="modal-backdrop" onMouseDown={() => setAccountOpen(false)}><div className="modal-card account-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setAccountOpen(false)}>×</button><p className="modal-kicker">account & security</p><h2>you’re in control</h2><section className="settings-section"><h3>email</h3><form className="account-form" onSubmit={changeEmail}><input name="email" type="email" defaultValue={profile?.email} required aria-label="New email" /><button className="settings-button primary" disabled={accountBusy}>change email</button></form><button className="settings-button" disabled={accountBusy} onClick={() => void sendPasswordReset()}>send password reset email</button></section><section className="settings-section"><h3>your data</h3><button className="settings-button" onClick={exportMyData}>download my data</button><button className="danger-button" disabled={accountBusy} onClick={() => void deleteAccount()}>permanently delete account</button>{accountError && <p className="auth-error" role="alert">{accountError}</p>}</section></div></div>}
     {settingsOpen && <div className="modal-backdrop" onMouseDown={() => setSettingsOpen(false)}><div className="modal-card settings-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setSettingsOpen(false)}>×</button><p className="modal-kicker">lumi settings</p><h2>make lumi feel like yours</h2><section className="settings-section"><h3>account</h3>{profile ? <><div className="account-summary"><span className="avatar">{profile.name[0]?.toLowerCase()}</span><span><strong>{profile.name}</strong><small>{profile.email}</small></span></div><div className={`sync-status ${syncState}`}><i />{syncState === "synced" ? "chats, Spaces & memory saved to cloud" : syncState === "syncing" ? "saving to cloud..." : syncState === "error" ? "cloud setup needed" : "saved on this device"}</div><div className="settings-actions"><button className="settings-button primary" onClick={() => { setSettingsOpen(false); setAccountOpen(true); }}>manage account</button><button className="settings-button" onClick={() => void logout()}>log out</button></div></> : <><p>log in to sync chats, Spaces, and approved memories across your devices.</p><div className="settings-actions"><button className="settings-button primary" onClick={() => { setSettingsOpen(false); openAuth("login"); }}>log in</button><button className="settings-button" onClick={() => { setSettingsOpen(false); openAuth("signup"); }}>sign up</button></div></>}</section><section className="settings-section"><h3>personalization</h3><button className="settings-row" onClick={() => { setSettingsOpen(false); setThemeOpen(true); }}><span><strong>theme</strong><small>{theme}</small></span><b>›</b></button><button className="settings-row" onClick={() => { setSettingsOpen(false); setMemoryOpen(true); }}><span><strong>memory</strong><small>{memoryOn ? `${memories.filter((item) => item.status === "approved").length} saved · ${memories.filter((item) => item.status === "pending").length} to review` : "off"}</small></span><b>›</b></button></section><section className="settings-section"><h3>data & privacy</h3><p>{profile ? "regular chats, Spaces, and approved memories sync securely. temporary chats never save or become memory." : "regular chats and memories stay on this device. temporary chats disappear when you leave."}</p><button className="settings-button" onClick={() => { setSettingsOpen(false); startTemporaryChat(); }}>start a temporary chat</button><button className="danger-button" onClick={clearLocalData}>clear data on this device</button></section></div></div>}
   </>;
 
-  if (screen === "home") return (
-    <main className="landing" data-theme={theme} data-mood="bright">
-      <nav className="landing-nav"><LumiWordmark compact /><div>{profile ? <button className="text-button" onClick={() => setScreen("app")}>open lumi</button> : <><button className="text-button" onClick={() => openAuth("login")}>log in</button><button className="text-button" onClick={() => openAuth("signup")}>sign up</button></>}<button className="landing-cta" onClick={() => setScreen("app")}>try lumi ✦</button></div></nav>
-      <section className="landing-hero"><div className="hero-copy"><p className="eyebrow"><span /> an ai companion that meets you where you are</p><h1>you bring the moment.<br/><em>we’ll meet it together.</em></h1><p>talk things through, learn, create, or find your next step—with support that adapts to you without taking over.</p><div className="hero-actions"><button className="landing-cta large" onClick={() => setScreen("app")}>talk to lumi <span>↗</span></button><button className="hero-demo" onClick={() => setScreen("app")}><i>▶</i> see how lumi helps</button></div><div className="trust-row"><span>✦ remembers with permission</span><span>◌ private temporary chats</span><span>⌁ you stay in control</span></div></div><div className="hero-graphic"><div className="hero-halo"/><span className="orbit orbit-one">“just listen for a minute”</span><span className="orbit orbit-two">“think this through with me”</span><span className="orbit orbit-three">“help me take one step”</span><img className="hero-avatar" src="/lumi/lumi-avatar.png" alt="Lumi, your AI companion"/><div className="hero-status"><i/><span><strong>lumi is here</strong><small>ready to listen, think, or help you move</small></span></div></div></section>
-      <section className="home-marquee" aria-label="Ways to use Lumi"><span>chat through it ✦</span><span>study smarter ✦</span><span>make something wild ✦</span><span>plan the next move ✦</span></section>
-      <section className="feature-strip"><article className="feature-memory"><span>01 / CONTEXT</span><h2>continuity,<br/>not surveillance.</h2><p>your goals, preferences, and projects can follow you across chats—always visible, editable, and yours to erase.</p><div className="mini-memory"><i>✦</i><span><strong>tour wardrobe</strong><small>Bijou · music ideas</small></span><b>remembered</b></div></article><article className="feature-mood"><span>02 / PRESENCE</span><h2>the room meets<br/>the moment.</h2><p>the living background responds gently to the conversation while your chosen theme stays yours.</p><div className="mood-dots"><i/><i/><i/><i/><i/><i/></div></article><article className="feature-think"><span>03 / SUPPORT</span><h2>listen, think,<br/>then move.</h2><p>Lumi can make room for the feeling, reason beside you, or help turn it into one grounded next step.</p><div className="mini-thinking"><LumiMark small thinking/><span><strong>finding our next step</strong><small>supporting without taking over</small></span></div></article></section>
-      <footer className="landing-footer"><LumiWordmark compact /><p>made for curious people with a lot going on.</p><button className="text-button" onClick={() => setThemeOpen(true)}>change the mood ◐</button></footer>
-      {overlays}
-    </main>
-  );
+  function recordCoursework(course: Course, text: string) {
+    if (!localDataReady) return;
+    setChats(current => {
+      const existing = current.find(chat => chat.messages[0]?.text === journalMarker(course.id));
+      if (existing) return current.map(chat => chat.id === existing.id ? { ...chat, messages: [...chat.messages, { role: "user" as const, text }], updatedAt: Date.now() } : chat);
+      const next = makeChat("learn");
+      return [{ ...next, title: `Unity coursework · ${course.code}`, messages: [{ role: "user" as const, text: journalMarker(course.id) }, { role: "user" as const, text }] }, ...current];
+    });
+  }
+
+  function openTutor(prompt?: string) {
+    if (isThinking) { setScreen("app"); return; }
+    const next = makeChat("learn");
+    setChats(current => [next, ...current]); setActiveChatId(next.id); setMode("learn");
+    setActiveSpaceId(null); setAttachments([]); setInput(prompt || ""); setScreen("app");
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }
+
+  if (screen === "home") return <>
+    <Campus key={dataOwnerId || "loading"} name={profile?.name} ready={localDataReady} sync={syncState} journals={localDataReady ? chats : []} onRecord={recordCoursework} onTutor={openTutor} onAccount={() => profile ? setSettingsOpen(true) : openAuth("login")} onSettings={() => setSettingsOpen(true)} />
+    {overlays}
+    {toast && <div className="toast" role="status">{toast}</div>}
+  </>;
 
   return (
     <main className={`app-shell mode-${mode} mood-${mood} ${isThinking ? "is-thinking" : ""}`} data-theme={theme} data-mood={mood}>
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="brand-row">
-          <LumiWordmark compact />
+          <button className="unity-return" onClick={() => setScreen("home")}>← unity campus</button>
           <button className="close-menu" onClick={() => setSidebarOpen(false)} aria-label="Close menu">×</button>
         </div>
 
