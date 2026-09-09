@@ -1,3 +1,9 @@
+# Unity student platform
+
+Unity now offers student sign-up with major selection, three foundation major pathways, a major-specific campus sequence, built-in Lumi advising, untimed practice checks, practice GPA, downloadable personal learning records, and private AI student-service conversations with open/closed state. The existing Supabase account and per-user journal sync remain the persistence layer; no database migration is required. Major selection at sign-up is stored in auth metadata, and later changes use an account-isolated profile journal.
+
+Practice GPA uses the best scored check for each course in the selected major, equally weighted. Unassessed courses are excluded and an empty record displays no GPA. It is a self-study measure, not an official academic GPA; client-side practice scores are not authoritative grades. Financial aid, accredited degrees/credits, credit transfer, laptop shipments, staffed support, and official transcripts are not offered by this release. Service conversations clearly identify AI guidance and are not delivered to humans.
+
 # Unity College of the Arts · powered by Lumi
 
 Unity adds a creative learning campus to Lumi with three foundation courses, nine lessons, knowledge checks, self-reported completion, and editable project drafts. Lessons now open as guided conversations with a grounded welcome, creative examples, quick replies, saved back-and-forth tutoring, retry handling, and a notes/practice tab. Each lesson keeps its own conversation in the existing account-isolated storage. The campus is the default home; Lumi remains available as the study companion with its existing chat, voice, attachments, Spaces, accounts, and memory.

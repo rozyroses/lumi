@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { type Course, type Lesson, type JournalMessage, lessonMarker, lessonOpening } from './learning';
-type Props = {course: Course; lesson: Lesson; name?: string; completed: string[]; ready: boolean; saved: JournalMessage[]; onSave: (marker: string, title: string, messages: JournalMessage[])=>void; onReply: (messages: JournalMessage[], signal: AbortSignal)=>Promise<string>};
-export default function LessonSession({course,lesson,name,completed,ready,saved,onSave,onReply}:Props){
- const marker=lessonMarker(course.id,lesson.title);
- const initial=lessonOpening(course,lesson,name,completed);
+type Props = {customOpening?: JournalMessage[]; customMarker?: string; course: Course; lesson: Lesson; name?: string; completed: string[]; ready: boolean; saved: JournalMessage[]; onSave: (marker: string, title: string, messages: JournalMessage[])=>void; onReply: (messages: JournalMessage[], signal: AbortSignal)=>Promise<string>};
+export default function LessonSession({course,lesson,name,completed,ready,saved,onSave,onReply,customOpening,customMarker}:Props){
+ const marker=customMarker || lessonMarker(course.id,lesson.title);
+ const initial=customOpening || lessonOpening(course,lesson,name,completed);
  const [messages,setMessages]=useState<JournalMessage[]>(saved.length?saved:initial);
  const [input,setInput]=useState('');const [busy,setBusy]=useState(false);const [error,setError]=useState('');
  const controller=useRef<AbortController|null>(null);const end=useRef<HTMLDivElement>(null);
