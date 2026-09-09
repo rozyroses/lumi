@@ -6,7 +6,7 @@ type PortalView='majors'|'practice'|'grades'|'services'|'campus'|'audit';
 type Props={view:string;major:Major|null;journals:StudentJournal[];ready:boolean;signedIn:boolean;onSignup:()=>void;onSave:(marker:string,title:string,messages:JournalMessage[])=>void;onOpen:(course:Course)=>void;onHelp:(prompt?:string)=>void;onService:(id:string)=>void;onNavigate:(view:PortalView)=>void};
 
 export default function StudentPortal({view,major,journals,ready,signedIn,onSignup,onSave,onOpen,onHelp,onService,onNavigate}:Props){
- const majorCourses=(major?.courseIds||courses.map(c=>c.id)).map(id=>courses.find(c=>c.id===id)).filter(Boolean) as Course[];
+ const majorCourses=(major?.courseIds||courses.map(c=>c.id)).map(id=>courses.find(c=>c.id)).filter(Boolean) as Course[];
  const [practiceId,setPracticeId]=useState(majorCourses[0]?.id||courses[0].id);
  const [answers,setAnswers]=useState<Record<number,number>>({});
  const [result,setResult]=useState<Attempt|null>(null);
@@ -20,6 +20,7 @@ export default function StudentPortal({view,major,journals,ready,signedIn,onSign
  const completedFoundationLessons=majorCourses.reduce((n,c)=>n+c.lessons.filter(l=>courseState(c).completed.has(l.title)).length,0);
  const foundationPercent=totalFoundationLessons?Math.round(completedFoundationLessons/totalFoundationLessons*100):0;
  const projectedTerm=`Spring ${new Date().getFullYear()+4}`;
+ const nextRequirements=major?.requirements.slice(0,3)||[];
 
  function choose(id:string){if(!signedIn){onSignup();return;}onSave(PROFILE_MARKER,'Unity student profile',[{role:'user',text:PROFILE_MARKER},{role:'user',text:JSON.stringify({majorId:id})}]);}
  function submit(){if(!signedIn||!ready)return;const attempt={id:crypto.randomUUID(),courseId:practice.id,correct:practice.lessons.filter((l,i)=>answers[i]===l.answer).length,total:practice.lessons.length,at:Date.now()};const marker=`[Unity practice: ${attempt.id}]`;onSave(marker,`Practice · ${practice.code}`,[{role:'user',text:marker},{role:'user',text:JSON.stringify(attempt)}]);setResult(attempt);}
@@ -28,13 +29,34 @@ export default function StudentPortal({view,major,journals,ready,signedIn,onSign
 
  return <div className="unity-portal">
  {view==='majors'&&major&&<>
-  <p className="unity-kicker">MY ACADEMIC HOME</p><h1>{major.degree}</h1><p className="unity-portal-lead">Your program, foundation pathway, progress, and degree-planning tools live here. Practice and Lumi guidance now follow this major automatically.</p>
+  <p className="unity-kicker">MY ACADEMIC HOME</p>
+  <h1>{major.degree}</h1>
+  <p className="unity-portal-lead">Everything connected to your program lives here: your current semester, degree-plan progress, upcoming requirements, projected graduation, and shortcuts into your personalized courses.</p>
+
   <section className="unity-path-banner"><div><p className="unity-kicker">{major.school.toUpperCase()}</p><h2>{major.title}</h2><p>{major.description}</p></div><button onClick={()=>onNavigate('audit')}>Open degree audit ↗</button></section>
-  <div className="unity-grade-overview"><article><span>FOUNDATION PROGRESS</span><strong>{foundationPercent}<small>%</small></strong><p>{completedFoundationLessons} of {totalFoundationLessons} foundation lessons completed.</p></article><article><span>PROGRAM PLAN</span><strong>{major.totalCredits}<small> credits</small></strong><p>Degree-plan requirement total represented in your audit.</p></article><article><span>PROJECTED GRADUATION</span><h2>{projectedTerm}</h2><p>Planning estimate only; your future enrollment pace can change it.</p></article></div>
-  <div className="unity-info-note">Your degree audit is a planning experience inside Unity. Current lesson completion and practice grades do not by themselves certify earned academic credit or an official graduation date.</div>
-  <div className="unity-section-heading"><h2>Your current foundation</h2><button onClick={()=>onNavigate('audit')}>Degree audit ↗</button></div>
+
+  <div className="unity-grade-overview">
+   <article><span>FOUNDATION PROGRESS</span><strong>{foundationPercent}<small>%</small></strong><p>{completedFoundationLessons} of {totalFoundationLessons} foundation lessons completed.</p></article>
+   <article><span>DEGREE PLAN</span><strong>{major.totalCredits}<small> credits</small></strong><p>Total credits represented in your program plan.</p></article>
+   <article><span>PROJECTED GRADUATION</span><h2>{projectedTerm}</h2><p>Planning estimate based on a standard four-year path.</p></article>
+  </div>
+
+  <div className="unity-section-heading"><h2>Current semester</h2><span>{majorCourses.length} active foundation courses</span></div>
+  <div className="unity-table-wrap"><table><caption>Your personalized course list</caption><thead><tr><th>Course</th><th>Progress</th><th>Status</th></tr></thead><tbody>{majorCourses.map(c=>{const count=c.lessons.filter(l=>courseState(c).completed.has(l.title)).length;return <tr key={c.id}><td>{c.code}<strong>{c.title}</strong></td><td>{count}/{c.lessons.length} lessons</td><td>{count===c.lessons.length?'Complete':count?'In progress':'Not started'}</td></tr>})}</tbody></table></div>
+  <div className="unity-lesson-actions">{majorCourses.map(c=><button key={c.id} onClick={()=>onOpen(c)}>Open {c.code} ↗</button>)}</div>
+
+  <div className="unity-section-heading"><h2>Next requirements</h2><button onClick={()=>onNavigate('audit')}>See full degree audit ↗</button></div>
+  <div className="unity-major-grid">{nextRequirements.map((r,i)=><article key={r.id}><span className="unity-major-number">0{i+1}</span><p className="unity-kicker">{r.group.toUpperCase()}</p><h2>{r.label}</h2><p>{r.credits} credits in your degree plan.</p><h3>Status</h3><p>Planned</p></article>)}</div>
+
+  <div className="unity-section-heading"><h2>Degree snapshot</h2><span>One place for your whole program</span></div>
+  <section className="unity-path-banner"><div><p className="unity-kicker">PROGRAM SUMMARY</p><h2>{major.totalCredits}-credit degree plan</h2><p>{major.requirements.length} requirement groups · {majorCourses.length} current foundation courses · projected completion {projectedTerm}</p></div><button className="unity-primary" onClick={()=>onNavigate('audit')}>View degree audit</button></section>
+
+  <div className="unity-info-note">Your My Major page and degree audit are planning tools inside Unity. Lesson completion and practice scores are shown separately from officially earned academic credit.</div>
+
+  <div className="unity-section-heading"><h2>Your current foundation</h2><span>Personalized to {major.title}</span></div>
   <div className="unity-major-grid">{majorCourses.map((course,i)=>{const state=courseState(course);const completed=course.lessons.filter(l=>state.completed.has(l.title)).length;return <article key={course.id}><span className="unity-major-number">0{i+1}</span><p className="unity-kicker">{course.code}</p><h2>{course.title}</h2><p>{course.description}</p><h3>Progress</h3><p>{completed}/{course.lessons.length} lessons completed</p><progress value={completed} max={course.lessons.length} aria-label={`${course.title} lesson progress`}/><button className="unity-primary" onClick={()=>onOpen(course)}>{completed?'Continue course':'Start course'} ↗</button></article>})}</div>
-  <div className="unity-lesson-actions"><button className="unity-primary" onClick={()=>onNavigate('audit')}>View degree audit</button><button onClick={()=>onNavigate('services')}>Student services</button><button onClick={()=>onService('major-change')}>Talk to Lumi about changing my major ✦</button></div>
+
+  <div className="unity-lesson-actions"><button className="unity-primary" onClick={()=>onNavigate('audit')}>View degree audit</button><button onClick={()=>onNavigate('services')}>Student services</button><button onClick={()=>onService('advising')}>Academic advising with Lumi ✦</button></div>
  </>}
 
  {view==='majors'&&!major&&<>
