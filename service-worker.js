@@ -1,4 +1,4 @@
-const CACHE = "lumi-shell-v1";
+const CACHE = "lumi-shell-v2";
 const SHELL = ["/lumi/", "/lumi/manifest.webmanifest", "/lumi/lumi-logo.png", "/lumi/assets/lumi-app.css", "/lumi/assets/lumi-app.js"];
 self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener("activate", (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)))).then(() => self.clients.claim())));
