@@ -1,0 +1,199 @@
+/* EBG family UI layer for Lumi.
+   Keeps Lumi's mood themes while aligning spacing, surfaces, controls, and hierarchy. */
+
+:root{
+  --family-radius-sm:14px;
+  --family-radius:20px;
+  --family-radius-lg:28px;
+  --family-shadow:0 18px 50px rgba(17,24,43,.10);
+  --family-shadow-soft:0 10px 30px rgba(17,24,43,.07);
+  --family-focus:color-mix(in srgb,var(--lavender) 68%,transparent);
+}
+*{scrollbar-width:thin}
+button,input,textarea,select{transition:border-color .16s ease,background .16s ease,color .16s ease,transform .16s ease,box-shadow .16s ease}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(--family-focus);outline-offset:3px}
+
+/* Main Lumi assistant shell */
+.app-shell .sidebar{
+  width:252px;
+  padding:18px 15px 13px;
+  border-right:1px solid color-mix(in srgb,var(--line) 86%,transparent);
+}
+.app-shell .workspace{margin-left:252px;width:calc(100% - 252px)}
+.app-shell .topbar{
+  min-height:68px;
+  height:auto;
+  padding:10px 24px;
+  background:color-mix(in srgb,var(--panel) 82%,transparent);
+  border-bottom:1px solid var(--line);
+  backdrop-filter:blur(22px) saturate(1.12);
+}
+.app-shell .brand-row{padding:0 8px 18px}
+.app-shell .new-button{
+  border-radius:999px!important;
+  min-height:42px;
+  box-shadow:none;
+}
+.app-shell .nav-item,
+.app-shell .settings-launch,
+.app-shell .profile-button{
+  border-radius:var(--family-radius-sm);
+}
+.app-shell .nav-item{min-height:40px;padding:9px 10px}
+.app-shell .nav-item.active{
+  background:color-mix(in srgb,var(--lavender) 18%,transparent)!important;
+  color:color-mix(in srgb,var(--lavender) 75%,white)!important;
+}
+[data-theme="cloud"] .app-shell .nav-item.active{color:var(--violet)!important}
+.app-shell .history-row,
+.app-shell .space-row{border-radius:12px}
+.app-shell .content{padding:38px 30px 24px}
+.app-shell .welcome{max-width:900px}
+.app-shell .welcome h1{font-size:clamp(38px,5vw,58px)!important;letter-spacing:-.045em!important}
+.app-shell .subtitle{max-width:580px;line-height:1.65}
+.app-shell .starter-grid{gap:12px}
+.app-shell .starter-card{
+  min-height:138px;
+  padding:18px;
+  border-radius:var(--family-radius)!important;
+  box-shadow:var(--family-shadow-soft);
+}
+.app-shell .starter-card:hover{transform:translateY(-3px);box-shadow:var(--family-shadow)}
+.app-shell .starter-icon{border-radius:13px}
+.app-shell .space-banner,
+.app-shell .memory-control,
+.app-shell .memory-item{
+  border-radius:var(--family-radius-sm);
+}
+.app-shell .composer{
+  border-radius:24px!important;
+  padding:7px 8px 7px 11px;
+  box-shadow:0 16px 48px rgba(0,0,0,.16);
+}
+[data-theme="cloud"] .app-shell .composer{box-shadow:var(--family-shadow)}
+.app-shell .message > p,
+.app-shell .message-content,
+.app-shell .user-bubble{
+  border-radius:20px!important;
+  line-height:1.7;
+}
+.app-shell .message:not(.user) > p,
+.app-shell .message:not(.user) .message-content{border-top-left-radius:6px!important}
+.app-shell .message.user > p,
+.app-shell .user-bubble{border-top-right-radius:6px!important}
+.app-shell .round-button,
+.app-shell .account-chip,
+.app-shell .memory-pill{border-color:var(--line)}
+.app-shell .mode-pill,
+.app-shell .memory-pill,
+.app-shell .account-chip{backdrop-filter:blur(12px)}
+
+/* Modals/settings */
+.modal-backdrop .modal-card{
+  border-radius:var(--family-radius-lg)!important;
+  box-shadow:0 30px 90px rgba(17,24,43,.24)!important;
+}
+.modal-card input,
+.modal-card select,
+.modal-card textarea,
+.account-form input{border-radius:13px!important}
+.modal-card .settings-row,
+.modal-card .settings-button,
+.modal-card .memory-control,
+.modal-card .memory-item{border-radius:14px!important}
+.modal-card .modal-primary,
+.modal-card .settings-button.primary{border-radius:999px!important}
+.theme-option{border-radius:18px!important}
+.theme-preview{border-radius:13px!important}
+
+/* Lumi public / university pages */
+.front-nav{
+  min-height:78px;
+  height:auto;
+  padding-top:12px;
+  padding-bottom:12px;
+  backdrop-filter:blur(20px) saturate(1.1);
+}
+.front-button,
+.front-login{border-radius:999px!important}
+.front-hero-visual,
+.front-studio-image{overflow:hidden}
+.front-major-preview,
+.front-lesson-demo,
+.front-paths article,
+.front-learning,
+.front-faq details{
+  border-radius:var(--family-radius-lg);
+}
+.front-major-preview,
+.front-lesson-demo{box-shadow:var(--family-shadow-soft)}
+.front-path-tabs button{border-radius:999px!important}
+.front-finder-options>button{border-radius:18px!important}
+.front-faq details{padding-left:18px;padding-right:18px}
+.front-faq details[open]{background:rgba(255,255,255,.035)}
+.front-final-cta{border-radius:44px 44px 0 0!important}
+
+/* Student campus */
+.unity-sidebar{width:230px!important;padding:18px 16px!important}
+.unity-topbar{padding:18px 28px!important;backdrop-filter:blur(20px) saturate(1.1)}
+.unity-content{padding:24px 28px 56px!important}
+.unity-path-banner,
+.unity-progress,
+.unity-course,
+.unity-lesson,
+.unity-practice-paper,
+.unity-major-grid>article,
+.unity-grade-overview article,
+.unity-lumi-strip,
+.unity-services-grid>button,
+.unity-table-wrap,
+.unity-service-history{border-radius:var(--family-radius)!important;box-shadow:var(--family-shadow-soft)!important}
+.unity-course:hover,
+.unity-services-grid>button:hover{box-shadow:var(--family-shadow)!important;transform:translateY(-3px)}
+.unity-primary,
+.unity-white-button,
+.unity-header-actions>button,
+.unity-lesson-tabs button,
+.unity-lesson-actions button,
+.unity-quick-replies button,
+.unity-session-composer button{border-radius:999px!important}
+.unity-session-composer{border-radius:22px!important;box-shadow:var(--family-shadow-soft)}
+.unity-tutor-message>div,
+.unity-tutor-message.user>div{border-radius:20px!important}
+.unity-tutor-message:not(.user)>div{border-top-left-radius:6px!important}
+.unity-tutor-message.user>div{border-top-right-radius:6px!important}
+.unity-help-dialog{border-radius:28px 0 0 28px!important}
+
+/* Theme-aware surface cleanup: retain Lumi moods, don't flatten cards. */
+[data-theme="midnight"] .starter-card,
+[data-theme="berry"] .starter-card,
+[data-theme="forest"] .starter-card{
+  background:color-mix(in srgb,var(--panel-2) 78%,transparent)!important;
+}
+[data-theme="cloud"] .starter-card{
+  background:rgba(255,255,255,.92)!important;
+  border-color:rgba(67,49,84,.11)!important;
+}
+[data-theme="cloud"] .sidebar{box-shadow:12px 0 38px rgba(45,35,59,.06)}
+[data-theme="cloud"] .workspace{background:
+  radial-gradient(circle at 82% -8%,rgba(138,111,232,.14),transparent 34%),
+  #fbf8fd!important}
+[data-theme="berry"] .workspace{background:radial-gradient(circle at 80% -10%,rgba(255,139,209,.12),transparent 35%),#18131a!important}
+[data-theme="forest"] .workspace{background:radial-gradient(circle at 80% -10%,rgba(116,226,182,.11),transparent 35%),#101815!important}
+
+/* Make mobile calmer and less cramped. */
+@media(max-width:900px){
+  .app-shell .content{padding:28px 20px 20px}
+  .app-shell .starter-grid{grid-template-columns:1fr!important}
+  .app-shell .starter-card{min-height:104px}
+  .unity-content{padding:20px 18px 48px!important}
+}
+@media(max-width:760px){
+  .front-faq details{border-radius:16px}
+  .front-final-cta{border-radius:32px 32px 0 0!important}
+}
+@media(prefers-reduced-motion:reduce){
+  .app-shell .starter-card:hover,
+  .unity-course:hover,
+  .unity-services-grid>button:hover{transform:none}
+}
