@@ -8,11 +8,11 @@ export default defineConfig({
     rollupOptions: {
       input: "source.html",
       output: {
-        entryFileNames: "assets/lumi-app.js",
+        entryFileNames: "assets/elle-app.js",
         chunkFileNames: "assets/[name]-[hash].js",
         assetFileNames: (assetInfo) =>
           assetInfo.names?.some((name) => /\.css$/.test(name))
-            ? "assets/lumi-app.css"
+            ? "assets/elle-app.css"
             : "assets/[name]-[hash][extname]",
       },
     },
