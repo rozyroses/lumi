@@ -1,4 +1,4 @@
-name: Deploy Lumi to GitHub Pages
+name: Deploy Elle to GitHub Pages
 
 on:
   push:

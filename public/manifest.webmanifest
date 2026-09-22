@@ -1,15 +1,15 @@
 {
-  "name": "Unity College of the Arts",
-  "short_name": "Unity",
-  "description": "Creative courses, projects, and your Lumi study companion.",
+  "name": "Elle",
+  "short_name": "Elle",
+  "description": "A social platform with built-in AI for conversation, communities, creativity, and everyday thinking.",
   "start_url": "/lumi/",
   "scope": "/lumi/",
   "display": "standalone",
-  "background_color": "#11182b",
-  "theme_color": "#11182b",
+  "background_color": "#f7f7fb",
+  "theme_color": "#f7f7fb",
   "icons": [
     {
-      "src": "/lumi/unity-icon.svg",
+      "src": "/lumi/elle-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"

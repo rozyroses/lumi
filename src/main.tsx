@@ -1,9 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
-import "./index.css";
-import "./unity-design.css";
-import "./ebg-family-ui.css";
+import ElleApp from "./ElleApp";
+import "./elle.css";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("/lumi/service-worker.js"));
@@ -11,6 +9,6 @@ if ("serviceWorker" in navigator) {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <ElleApp />
   </StrictMode>,
 );
