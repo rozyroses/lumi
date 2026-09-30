@@ -738,7 +738,7 @@ export default function ElleApp() {
         )}
 
         {tab === "messages" && (
-          <section className="messages-page real-dms">
+          <section className={cx("messages-page", "real-dms", activeDm && "chat-open")}>
             <div className="message-list">
               <div className="page-title"><h1>messages</h1><button aria-label="New message" onClick={() => setNewDmOpen((open) => !open)}><ElleIcon name="plus" /></button></div>
               {newDmOpen && (
@@ -775,6 +775,7 @@ export default function ElleApp() {
               {activeDm ? (
                 <>
                   <header>
+                    <button className="dm-back" type="button" onClick={() => setActiveDmId(null)}>messages</button>
                     <span className="avatar">{initials(activeDm.other_profile?.display_name || "elle user")}</span>
                     <div><strong>{activeDm.other_profile?.display_name || "elle user"}{activeDm.other_profile?.is_verified && <span className="verified ceo-verified" title="Verified">✓</span>}</strong><small>@{activeDm.other_profile?.username || "elleuser"}{activeDm.other_profile?.role_label ? ` · ${activeDm.other_profile.role_label}` : ""}</small></div>
                   </header>
