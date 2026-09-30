@@ -30,6 +30,7 @@ type Post = {
   time: string;
   avatar: string;
   verified?: boolean;
+  roleLabel?: string;
   likes: number;
   reposts: number;
   replies: number;
@@ -41,63 +42,6 @@ type Post = {
   tag?: string;
 };
 type AiMessage = { role: "user" | "assistant"; text: string };
-
-const starterPosts: Post[] = [
-  {
-    id: "p1",
-    name: "Maya West",
-    handle: "@mayawest",
-    text: "sometimes the best ideas happen when you stop trying to make them perfect. posted the demo anyway ✨",
-    time: "12m",
-    avatar: "MW",
-    verified: true,
-    likes: 1240,
-    reposts: 188,
-    replies: 62,
-    views: "18K",
-    tag: "music",
-  },
-  {
-    id: "p2",
-    name: "Jordan Lee",
-    handle: "@jordn",
-    text: "hot take: social media should feel social again. less performance, more actual people talking to each other.",
-    time: "27m",
-    avatar: "JL",
-    likes: 389,
-    reposts: 71,
-    replies: 94,
-    views: "9.6K",
-    tag: "culture",
-  },
-  {
-    id: "p3",
-    name: "The Creative Room",
-    handle: "@creativeroom",
-    text: "drop what you're working on today. music, design, school, business, anything. somebody in here might have the missing piece.",
-    time: "1h",
-    avatar: "CR",
-    verified: true,
-    likes: 902,
-    reposts: 143,
-    replies: 311,
-    views: "22K",
-    tag: "community",
-  },
-  {
-    id: "p4",
-    name: "Nia Brooks",
-    handle: "@niab",
-    text: "i asked an ai to explain my notes like a group chat and suddenly the chapter made sense 😭",
-    time: "2h",
-    avatar: "NB",
-    likes: 518,
-    reposts: 67,
-    replies: 43,
-    views: "11K",
-    tag: "ai",
-  },
-];
 
 const trends = [
   ["#NewMusicFriday", "42.8K posts"],
@@ -147,6 +91,8 @@ function feedPostFromRow(row: ElleFeedPostRow, userId?: string): Post {
     text: row.body,
     time: relativeTime(row.created_at),
     avatar: initials(name),
+    verified: row.profile?.is_verified,
+    roleLabel: row.profile?.role_label || "",
     likes: row.likes,
     reposts: row.reposts,
     replies: row.replies,
@@ -168,7 +114,7 @@ export default function ElleApp() {
   const [feedMode, setFeedMode] = useState<FeedMode>("for-you");
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<ElleProfileRow | null>(null);
-  const [posts, setPosts] = useState<Post[]>(starterPosts);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [replies, setReplies] = useState<ElleReplyRow[]>([]);
   const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [socialProfiles, setSocialProfiles] = useState<ElleProfileRow[]>([]);
@@ -263,7 +209,7 @@ export default function ElleApp() {
       setFollowingCount(snapshot.followingCount);
       setFollowerCount(snapshot.followerCount);
       setSocialProfiles(snapshot.profiles);
-      setPosts([...snapshot.posts.map((row) => feedPostFromRow(row, session?.user.id)), ...starterPosts]);
+      setPosts(snapshot.posts.map((row) => feedPostFromRow(row, session?.user.id)));
     } catch (error) {
       setToast(error instanceof Error ? error.message : "couldn’t refresh elle");
     } finally {
@@ -301,10 +247,6 @@ export default function ElleApp() {
       setAuthOpen(true);
       return;
     }
-    if (!post.authorId) {
-      setToast("that’s a sample post — try a live post ✦");
-      return;
-    }
     const key = `${action}:${post.id}`;
     if (actionBusy === key) return;
     setActionBusy(key);
@@ -334,10 +276,6 @@ export default function ElleApp() {
     if (!session) {
       setAuthMode("signup");
       setAuthOpen(true);
-      return;
-    }
-    if (!post.authorId) {
-      setToast("that’s a sample post — try a live post ✦");
       return;
     }
     setReplyBusy(true);
@@ -633,8 +571,8 @@ export default function ElleApp() {
             <section className="profile-hero">
               <div className="profile-cover" />
               <div className="profile-row"><div className="avatar profile-avatar">{initials(displayName)}</div><button onClick={openProfileEditor}>{session ? "edit profile" : "create account"}</button></div>
-              <h1>{session ? displayName : "your profile"}</h1>
-              <small>{session ? handle : "@you"}</small>
+              <h1>{session ? displayName : "your profile"}{session && profile?.is_verified && <span className="verified ceo-verified" title="Verified">✓</span>}</h1>
+              <small>{session ? handle : "@you"}{session && profile?.role_label && <span className="role-label">{profile.role_label}</span>}</small>
               <p>{session ? profileBio : "make a profile to start building your orbit ✦"}</p>
               <div className="profile-stats"><span><strong>{posts.filter((post) => post.mine).length}</strong> posts</span><span><strong>{followingCount}</strong> following</span><span><strong>{followerCount}</strong> followers</span></div>
             </section>
@@ -651,7 +589,7 @@ export default function ElleApp() {
                 <div className={cx("avatar", post.mine && "me")}>{post.avatar}</div>
                 <div className="post-body">
                   <div className="post-meta">
-                    <strong>{post.name}{post.verified && <span className="verified">✓</span>}</strong><span>{post.handle}</span><i>·</i><span>{post.time}</span>
+                    <strong>{post.name}{post.verified && <span className="verified ceo-verified" title="Verified">✓</span>}</strong>{post.roleLabel && <span className="post-role">{post.roleLabel}</span>}<span>{post.handle}</span><i>·</i><span>{post.time}</span>
                     {post.authorId && !post.mine && <button className={cx("post-follow", followingIds.includes(post.authorId) && "following")} onClick={() => void toggleFollow(post.authorId!)}>{followingIds.includes(post.authorId) ? "following" : "follow"}</button>}
                     <button>•••</button>
                   </div>
@@ -675,7 +613,7 @@ export default function ElleApp() {
                         {replies.filter((reply) => reply.post_id === post.id).map((reply) => (
                           <div className="reply-item" key={reply.id}>
                             <div className="avatar tiny">{initials(reply.profile?.display_name || "elle user")}</div>
-                            <div><strong>{reply.profile?.display_name || "elle user"}</strong><small>@{reply.profile?.username || "elleuser"} · {relativeTime(reply.created_at)}</small><p>{reply.body}</p></div>
+                            <div><strong>{reply.profile?.display_name || "elle user"}{reply.profile?.is_verified && <span className="verified ceo-verified" title="Verified">✓</span>}</strong><small>@{reply.profile?.username || "elleuser"}{reply.profile?.role_label ? ` · ${reply.profile.role_label}` : ""} · {relativeTime(reply.created_at)}</small><p>{reply.body}</p></div>
                           </div>
                         ))}
                         {!replies.some((reply) => reply.post_id === post.id) && <small className="reply-empty">be the first reply ✦</small>}
@@ -684,7 +622,7 @@ export default function ElleApp() {
                   )}
                 </div>
               </article>
-            )) : <div className="empty-state"><span>⌑</span><h2>nothing here yet</h2><p>{tab === "bookmarks" ? "save a post and it’ll show up here." : "try a different search."}</p></div>}
+            )) : <div className="empty-state"><span>⌑</span><h2>{tab === "home" ? "your orbit is quiet" : "nothing here yet"}</h2><p>{tab === "bookmarks" ? "save a post and it’ll show up here." : tab === "home" ? "be the first to post something real ✦" : "try a different search."}</p></div>}
           </section>
         )}
       </section>
@@ -707,7 +645,7 @@ export default function ElleApp() {
           {socialProfiles.filter((person) => person.id !== session?.user.id).slice(0, 3).map((person) => (
             <div key={person.id}>
               <span className="avatar">{initials(person.display_name)}</span>
-              <span><strong>{person.display_name}</strong><small>@{person.username}</small></span>
+              <span><strong>{person.display_name}{person.is_verified && <span className="verified ceo-verified" title="Verified">✓</span>}</strong><small>@{person.username}{person.role_label ? ` · ${person.role_label}` : ""}</small></span>
               <button className={followingIds.includes(person.id) ? "following" : ""} onClick={() => void toggleFollow(person.id)}>{followingIds.includes(person.id) ? "following" : "follow"}</button>
             </div>
           ))}
