@@ -278,3 +278,38 @@ button:focus-visible, a:focus-visible { outline: 3px solid #8c6ce7; outline-offs
 @media (max-width: 680px) {
   .mobile-dock { grid-template-columns: repeat(6, 1fr); }
 }
+
+
+/* Unified Elle icon system */
+.elle-ui-icon {
+  width: 22px;
+  height: 22px;
+  display: block;
+  overflow: visible;
+  color: currentColor;
+}
+.elle-nav i {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  font-style: normal;
+}
+.elle-nav i .elle-ui-icon { width: 24px; height: 24px; }
+.mobile-dock .elle-ui-icon { width: 25px; height: 25px; }
+.mobile-dock button.ai .elle-ui-icon { width: 27px; height: 27px; }
+.feed-settings .elle-ui-icon,
+.mobile-top-actions .elle-ui-icon { width: 19px; height: 19px; }
+.post-actions .elle-ui-icon { width: 20px; height: 20px; }
+.post-actions i { display: grid; place-items: center; }
+.post-meta button .elle-ui-icon,
+.elle-account button .elle-ui-icon { width: 19px; height: 19px; }
+.ai-orb .elle-ui-icon { width: 34px; height: 34px; }
+.ai-card-top .elle-ui-icon { width: 17px; height: 17px; }
+.ai-composer button .elle-ui-icon,
+.message-chat form button .elle-ui-icon,
+.page-title button .elle-ui-icon { width: 19px; height: 19px; }
+.explore-head label > span,
+.right-search > span { display: grid; place-items: center; }
+.explore-head label .elle-ui-icon,
+.right-search .elle-ui-icon { width: 18px; height: 18px; }
