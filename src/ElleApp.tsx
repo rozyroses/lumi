@@ -42,63 +42,6 @@ type Post = {
 };
 type AiMessage = { role: "user" | "assistant"; text: string };
 
-const starterPosts: Post[] = [
-  {
-    id: "p1",
-    name: "Maya West",
-    handle: "@mayawest",
-    text: "sometimes the best ideas happen when you stop trying to make them perfect. posted the demo anyway ✨",
-    time: "12m",
-    avatar: "MW",
-    verified: true,
-    likes: 1240,
-    reposts: 188,
-    replies: 62,
-    views: "18K",
-    tag: "music",
-  },
-  {
-    id: "p2",
-    name: "Jordan Lee",
-    handle: "@jordn",
-    text: "hot take: social media should feel social again. less performance, more actual people talking to each other.",
-    time: "27m",
-    avatar: "JL",
-    likes: 389,
-    reposts: 71,
-    replies: 94,
-    views: "9.6K",
-    tag: "culture",
-  },
-  {
-    id: "p3",
-    name: "The Creative Room",
-    handle: "@creativeroom",
-    text: "drop what you're working on today. music, design, school, business, anything. somebody in here might have the missing piece.",
-    time: "1h",
-    avatar: "CR",
-    verified: true,
-    likes: 902,
-    reposts: 143,
-    replies: 311,
-    views: "22K",
-    tag: "community",
-  },
-  {
-    id: "p4",
-    name: "Nia Brooks",
-    handle: "@niab",
-    text: "i asked an ai to explain my notes like a group chat and suddenly the chapter made sense 😭",
-    time: "2h",
-    avatar: "NB",
-    likes: 518,
-    reposts: 67,
-    replies: 43,
-    views: "11K",
-    tag: "ai",
-  },
-];
-
 const trends = [
   ["#NewMusicFriday", "42.8K posts"],
   ["Creative Tech", "18.2K posts"],
@@ -168,7 +111,7 @@ export default function ElleApp() {
   const [feedMode, setFeedMode] = useState<FeedMode>("for-you");
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<ElleProfileRow | null>(null);
-  const [posts, setPosts] = useState<Post[]>(starterPosts);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [replies, setReplies] = useState<ElleReplyRow[]>([]);
   const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [socialProfiles, setSocialProfiles] = useState<ElleProfileRow[]>([]);
@@ -263,7 +206,7 @@ export default function ElleApp() {
       setFollowingCount(snapshot.followingCount);
       setFollowerCount(snapshot.followerCount);
       setSocialProfiles(snapshot.profiles);
-      setPosts([...snapshot.posts.map((row) => feedPostFromRow(row, session?.user.id)), ...starterPosts]);
+      setPosts(snapshot.posts.map((row) => feedPostFromRow(row, session?.user.id)));
     } catch (error) {
       setToast(error instanceof Error ? error.message : "couldn’t refresh elle");
     } finally {
@@ -301,10 +244,6 @@ export default function ElleApp() {
       setAuthOpen(true);
       return;
     }
-    if (!post.authorId) {
-      setToast("that’s a sample post — try a live post ✦");
-      return;
-    }
     const key = `${action}:${post.id}`;
     if (actionBusy === key) return;
     setActionBusy(key);
@@ -334,10 +273,6 @@ export default function ElleApp() {
     if (!session) {
       setAuthMode("signup");
       setAuthOpen(true);
-      return;
-    }
-    if (!post.authorId) {
-      setToast("that’s a sample post — try a live post ✦");
       return;
     }
     setReplyBusy(true);
