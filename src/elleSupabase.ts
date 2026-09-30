@@ -10,6 +10,8 @@ export type ElleProfileRow = {
   username: string;
   display_name: string;
   bio: string;
+  is_verified: boolean;
+  role_label: string;
 };
 
 export type ElleReplyRow = {
@@ -64,7 +66,7 @@ function fallbackProfileName(user: User) {
 export async function ensureElleProfile(user: User) {
   const existing = await supabase
     .from("elle_profiles")
-    .select("id, username, display_name, bio")
+    .select("id, username, display_name, bio, is_verified, role_label")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -76,7 +78,7 @@ export async function ensureElleProfile(user: User) {
   const first = await supabase
     .from("elle_profiles")
     .insert({ id: user.id, username: base, display_name: displayName, bio: "" })
-    .select("id, username, display_name, bio")
+    .select("id, username, display_name, bio, is_verified, role_label")
     .single();
 
   if (!first.error && first.data) return first.data as ElleProfileRow;
@@ -87,7 +89,7 @@ export async function ensureElleProfile(user: User) {
   const retry = await supabase
     .from("elle_profiles")
     .insert({ id: user.id, username, display_name: displayName, bio: "" })
-    .select("id, username, display_name, bio")
+    .select("id, username, display_name, bio, is_verified, role_label")
     .single();
 
   if (retry.error) throw retry.error;
@@ -130,7 +132,7 @@ export async function fetchElleSocial(userId?: string): Promise<ElleSocialSnapsh
   const profileIds = [...new Set([...authorIds, ...replyAuthorIds, ...followRows.flatMap((row) => [row.follower_id, row.following_id])])];
 
   const profilesResult = profileIds.length
-    ? await supabase.from("elle_profiles").select("id, username, display_name, bio").in("id", profileIds)
+    ? await supabase.from("elle_profiles").select("id, username, display_name, bio, is_verified, role_label").in("id", profileIds)
     : { data: [], error: null };
   if (profilesResult.error) throw profilesResult.error;
 
@@ -229,7 +231,7 @@ export async function saveElleProfile(profile: ElleProfileRow) {
       },
       { onConflict: "id" },
     )
-    .select("id, username, display_name, bio")
+    .select("id, username, display_name, bio, is_verified, role_label")
     .single();
 
   if (result.error) throw result.error;
