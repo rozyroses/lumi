@@ -37,6 +37,19 @@ export type ElleFeedPostRow = {
   bookmarked: boolean;
 };
 
+export type ElleNotificationRow = {
+  id: string;
+  recipient_id: string;
+  actor_id: string;
+  kind: "like" | "repost" | "reply" | "follow";
+  post_id: string | null;
+  reply_id: string | null;
+  created_at: string;
+  read_at: string | null;
+  actor: ElleProfileRow | null;
+  post_body: string | null;
+};
+
 export type ElleSocialSnapshot = {
   posts: ElleFeedPostRow[];
   replies: ElleReplyRow[];
@@ -236,4 +249,49 @@ export async function saveElleProfile(profile: Pick<ElleProfileRow, "id" | "user
 
   if (result.error) throw result.error;
   return result.data as ElleProfileRow;
+}
+
+
+export async function fetchElleNotifications(userId: string) {
+  const result = await supabase
+    .from("elle_notifications")
+    .select("id, recipient_id, actor_id, kind, post_id, reply_id, created_at, read_at")
+    .eq("recipient_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (result.error) throw result.error;
+  const rows = result.data || [];
+  const actorIds = [...new Set(rows.map((row) => row.actor_id))];
+  const postIds = [...new Set(rows.map((row) => row.post_id).filter(Boolean))] as string[];
+
+  const [profilesResult, postsResult] = await Promise.all([
+    actorIds.length
+      ? supabase.from("elle_profiles").select("id, username, display_name, bio, is_verified, role_label").in("id", actorIds)
+      : Promise.resolve({ data: [], error: null }),
+    postIds.length
+      ? supabase.from("elle_posts").select("id, body").in("id", postIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  if (profilesResult.error) throw profilesResult.error;
+  if (postsResult.error) throw postsResult.error;
+
+  const actorById = new Map((profilesResult.data || []).map((profile) => [profile.id, profile as ElleProfileRow]));
+  const postById = new Map((postsResult.data || []).map((post) => [post.id, post.body as string]));
+
+  return rows.map((row) => ({
+    ...row,
+    actor: actorById.get(row.actor_id) || null,
+    post_body: row.post_id ? postById.get(row.post_id) || null : null,
+  })) as ElleNotificationRow[];
+}
+
+export async function markElleNotificationsRead(userId: string) {
+  const result = await supabase
+    .from("elle_notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("recipient_id", userId)
+    .is("read_at", null);
+  if (result.error) throw result.error;
 }
