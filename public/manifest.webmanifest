@@ -5,8 +5,8 @@
   "start_url": "/lumi/",
   "scope": "/lumi/",
   "display": "standalone",
-  "background_color": "#f7f7fb",
-  "theme_color": "#f7f7fb",
+  "background_color": "#f7f2e7",
+  "theme_color": "#f7f2e7",
   "icons": [
     {
       "src": "/lumi/elle-icon.svg",

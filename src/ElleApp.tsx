@@ -1,4 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import ElleLanding from "./ElleLanding";
+import { ElleMark, ElleWordmark } from "./ElleBrand";
 import { createClient, type Session } from "@supabase/supabase-js";
 
 type Tab = "home" | "explore" | "notifications" | "messages" | "bookmarks" | "communities" | "profile" | "ai";
@@ -115,6 +117,7 @@ function cx(...values: Array<string | false | null | undefined>) {
 }
 
 export default function ElleApp() {
+  const [landing, setLanding] = useState(() => window.location.hash !== "#feed");
   const [tab, setTab] = useState<Tab>("home");
   const [feedMode, setFeedMode] = useState<FeedMode>("for-you");
   const [session, setSession] = useState<Session | null>(null);
@@ -182,6 +185,8 @@ export default function ElleApp() {
   }, [posts, tab, search, feedMode]);
 
   function nav(next: Tab) {
+    setLanding(false);
+    window.history.replaceState(null, "", "#feed");
     setTab(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -294,20 +299,49 @@ export default function ElleApp() {
     }
   }
 
+  useEffect(() => {
+    function onHashChange() { setLanding(window.location.hash !== "#feed"); }
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  useEffect(() => {
+    if (!authOpen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const dialog = document.querySelector<HTMLFormElement>(".elle-auth");
+    dialog?.querySelector<HTMLInputElement>("input")?.focus();
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setAuthOpen(false);
+      if (event.key !== "Tab" || !dialog) return;
+      const controls = Array.from(dialog.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)"));
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = overflow; document.removeEventListener("keydown", onKey); previous?.focus(); };
+  }, [authOpen, authMode]);
+
+  const showLanding = landing && !session;
   const headerTitle = tab === "home" ? "home" : tab === "ai" ? "elle ai" : tab;
 
   return (
-    <main className="elle-shell">
+    <>
+      {showLanding && <ElleLanding onEnter={nav} onAuth={(mode) => { setAuthMode(mode); setAuthError(""); setAuthOpen(true); }} />}
+    <main className="elle-shell" hidden={showLanding}>
       <aside className="elle-left">
-        <button className="elle-logo" onClick={() => nav("home")} aria-label="Elle home"><span>e</span><b>elle</b></button>
+        <button className="elle-logo" onClick={() => nav("home")} aria-label="Elle home"><ElleWordmark /></button>
         <nav className="elle-nav" aria-label="Main navigation">
-          <button className={tab === "home" ? "active" : ""} onClick={() => nav("home")}><i>⌂</i><span>Home</span></button>
-          <button className={tab === "explore" ? "active" : ""} onClick={() => nav("explore")}><i>⌕</i><span>Explore</span></button>
-          <button className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><i>♡</i><span>Notifications</span><em>3</em></button>
-          <button className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><i>✉</i><span>Messages</span></button>
+          <button aria-label="home" className={tab === "home" ? "active" : ""} onClick={() => nav("home")}><i>⌂</i><span>Home</span></button>
+          <button aria-label="explore" className={tab === "explore" ? "active" : ""} onClick={() => nav("explore")}><i>⌕</i><span>Explore</span></button>
+          <button aria-label="notifications" className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><i>♡</i><span>Notifications</span><em>3</em></button>
+          <button aria-label="messages" className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><i>✉</i><span>Messages</span></button>
           <button className={tab === "bookmarks" ? "active" : ""} onClick={() => nav("bookmarks")}><i>⌑</i><span>Bookmarks</span></button>
           <button className={tab === "communities" ? "active" : ""} onClick={() => nav("communities")}><i>◎</i><span>Communities</span></button>
-          <button className={tab === "ai" ? "active ai-nav" : "ai-nav"} onClick={() => nav("ai")}><i>✦</i><span>Elle AI</span></button>
+          <button aria-label="ai" className={tab === "ai" ? "active ai-nav" : "ai-nav"} onClick={() => nav("ai")}><i>✦</i><span>Elle AI</span></button>
           <button className={tab === "profile" ? "active" : ""} onClick={() => nav("profile")}><i>◉</i><span>Profile</span></button>
         </nav>
         <button className="elle-post-button" onClick={() => { nav("home"); document.getElementById("elle-compose")?.focus(); }}>Post</button>
@@ -319,10 +353,11 @@ export default function ElleApp() {
       </aside>
 
       <section className="elle-center">
-        <header className="elle-mobile-top"><button className="elle-logo mini" onClick={() => nav("home")}><span>e</span></button><strong>{headerTitle}</strong><button onClick={() => setTheme(theme === "light" ? "dark" : "light")}>◐</button></header>
+        <header className="elle-mobile-top"><button className="elle-logo mini" aria-label="Elle home" onClick={() => nav("home")}><ElleMark /></button><strong>{headerTitle}</strong><button aria-label="Toggle theme" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>◐</button></header>
 
         {tab === "home" && (
           <>
+            <div className="orbit-feed-heading"><div><span>your daily orbit</span><h1>make yourself at home.</h1></div><span aria-hidden="true">✦</span></div>
             <header className="feed-header">
               <button className={feedMode === "for-you" ? "active" : ""} onClick={() => setFeedMode("for-you")}>For you</button>
               <button className={feedMode === "following" ? "active" : ""} onClick={() => setFeedMode("following")}>Following</button>
@@ -331,7 +366,7 @@ export default function ElleApp() {
             <section className="compose-card">
               <div className="avatar me">{initials(displayName)}</div>
               <div className="compose-main">
-                <textarea id="elle-compose" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="what's happening?" maxLength={500} />
+                <textarea id="elle-compose" value={draft} onChange={(event) => setDraft(event.target.value)} aria-label="Write a post" placeholder="what’s in your orbit?" maxLength={500} />
                 <div className="compose-tools">
                   <div><button title="Add media">▧</button><button title="Add GIF">GIF</button><button title="Add poll">≡</button><button title="Add emoji">☺</button><button title="Schedule">◷</button></div>
                   <span>{draft.length ? 500 - draft.length : ""}</span>
@@ -455,7 +490,7 @@ export default function ElleApp() {
           <button onClick={() => nav("ai")}>ask elle <span>↗</span></button>
         </section>
         <section className="side-card trends">
-          <h2>what’s happening</h2>
+          <h2>trending in your orbit</h2>
           {trends.map((trend, index) => <button key={trend[0]} onClick={() => { setSearch(trend[0].replace("#", "")); nav("explore"); }}><small>{index === 0 ? "trending now" : "trending"}</small><strong>{trend[0]}</strong><span>{trend[1]}</span></button>)}
           <button className="show-more" onClick={() => nav("explore")}>show more</button>
         </section>
@@ -466,19 +501,21 @@ export default function ElleApp() {
         <footer>Terms · Privacy · Accessibility · About · © 2026 Elle</footer>
       </aside>
 
-      <nav className="mobile-dock">
-        <button className={tab === "home" ? "active" : ""} onClick={() => nav("home")}><span>⌂</span></button>
-        <button className={tab === "explore" ? "active" : ""} onClick={() => nav("explore")}><span>⌕</span></button>
-        <button className={tab === "ai" ? "active ai" : "ai"} onClick={() => nav("ai")}><span>✦</span></button>
-        <button className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><span>♡</span></button>
-        <button className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><span>✉</span></button>
+      <nav className="mobile-dock" aria-label="Mobile navigation">
+        <button aria-label="home" className={tab === "home" ? "active" : ""} onClick={() => nav("home")}><span>⌂</span></button>
+        <button aria-label="explore" className={tab === "explore" ? "active" : ""} onClick={() => nav("explore")}><span>⌕</span></button>
+        <button aria-label="ai" className={tab === "ai" ? "active ai" : "ai"} onClick={() => nav("ai")}><span>✦</span></button>
+        <button aria-label="notifications" className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><span>♡</span></button>
+        <button aria-label="messages" className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><span>✉</span></button>
       </nav>
+
+    </main>
 
       {authOpen && (
         <div className="auth-backdrop" onMouseDown={() => setAuthOpen(false)}>
-          <form className="elle-auth" onSubmit={submitAuth} onMouseDown={(event) => event.stopPropagation()}>
-            <button type="button" className="auth-close" onClick={() => setAuthOpen(false)}>×</button>
-            <div className="elle-logo auth-logo"><span>e</span><b>elle</b></div>
+          <form role="dialog" aria-modal="true" aria-label={authMode === "signup" ? "Join elle" : "Sign in to elle"} className="elle-auth" onSubmit={submitAuth} onMouseDown={(event) => event.stopPropagation()}>
+            <button type="button" className="auth-close" aria-label="Close sign in" onClick={() => setAuthOpen(false)}>×</button>
+            <div className="elle-logo auth-logo"><ElleWordmark /></div>
             <p>{authMode === "signup" ? "JOIN THE CONVERSATION" : "WELCOME BACK"}</p>
             <h2>{authMode === "signup" ? "make your corner of elle." : "sign in to elle."}</h2>
             {authMode === "signup" && <label>display name<input name="name" placeholder="what should people call you?" required /></label>}
@@ -492,6 +529,6 @@ export default function ElleApp() {
       )}
 
       {toast && <div className="elle-toast">{toast}</div>}
-    </main>
+    </>
   );
 }

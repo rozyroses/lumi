@@ -1,3 +1,13 @@
+# Elle · your world. your people.
+
+Elle’s active entry point is `src/ElleApp.tsx`. The orbit redesign adds a public welcome page (`ElleLanding.tsx`), an SVG orb logo, an original space illustration, and a shared cream/cobalt/lilac/coral theme (`orbit.css`). `#feed` opens the social app directly; signed-in visitors continue to the feed. Landing buttons reuse the existing account, communities, discovery and AI flows. Reduced-motion preferences disable decorative animation.
+
+Run `npm ci`, then `npm run dev` and open `/lumi/source.html`. Run `npm run check` before pushing. Production is built from `source.html` and served at https://rozyroses.github.io/lumi/ by the existing GitHub Actions workflow on `main`.
+
+The social feed and interactions still use the existing starter/local data; this visual redesign does not add server-side social persistence. The legacy Unity/Lumi files below remain for historical context.
+
+---
+
 # Unity brand and public homepage
 
 Unity now opens on an interactive public homepage with major tabs, a sample knowledge check, a creative-interest path finder, FAQ accordions, and direct student-account/campus entry. Public homepage and all student surfaces share the navy, blue, and lime design system: courses, tutoring, practice, grades, services, onboarding, authentication, memory, preferences, and retained creative tools. Major tabs support arrow keys, account dialogs contain keyboard focus, and campus section navigation supports browser back/forward.
