@@ -50,6 +50,24 @@ export type ElleNotificationRow = {
   post_body: string | null;
 };
 
+export type ElleDmMessageRow = {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  body: string;
+  created_at: string;
+};
+
+export type ElleDmConversationRow = {
+  id: string;
+  user_a: string;
+  user_b: string;
+  created_at: string;
+  other_profile: ElleProfileRow | null;
+  last_message: ElleDmMessageRow | null;
+  unread_count: number;
+};
+
 export type ElleSocialSnapshot = {
   posts: ElleFeedPostRow[];
   replies: ElleReplyRow[];
@@ -293,5 +311,138 @@ export async function markElleNotificationsRead(userId: string) {
     .update({ read_at: new Date().toISOString() })
     .eq("recipient_id", userId)
     .is("read_at", null);
+  if (result.error) throw result.error;
+}
+
+
+export async function fetchElleDmConversations(userId: string) {
+  const conversations = await supabase
+    .from("elle_dm_conversations")
+    .select("id, user_a, user_b, created_at")
+    .or(`user_a.eq.${userId},user_b.eq.${userId}`);
+
+  if (conversations.error) throw conversations.error;
+  const rows = conversations.data || [];
+  const conversationIds = rows.map((row) => row.id);
+  const otherIds = [...new Set(rows.map((row) => row.user_a === userId ? row.user_b : row.user_a))];
+
+  const [profilesResult, messagesResult, readsResult] = await Promise.all([
+    otherIds.length
+      ? supabase.from("elle_profiles").select("id, username, display_name, bio, is_verified, role_label").in("id", otherIds)
+      : Promise.resolve({ data: [], error: null }),
+    conversationIds.length
+      ? supabase.from("elle_dm_messages").select("id, conversation_id, sender_id, body, created_at").in("conversation_id", conversationIds).order("created_at", { ascending: true }).limit(1000)
+      : Promise.resolve({ data: [], error: null }),
+    conversationIds.length
+      ? supabase.from("elle_dm_reads").select("conversation_id, user_id, last_read_at").eq("user_id", userId).in("conversation_id", conversationIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  for (const result of [profilesResult, messagesResult, readsResult]) {
+    if (result.error) throw result.error;
+  }
+
+  const profileById = new Map((profilesResult.data || []).map((profile) => [profile.id, profile as ElleProfileRow]));
+  const messages = (messagesResult.data || []) as ElleDmMessageRow[];
+  const readByConversation = new Map((readsResult.data || []).map((row) => [row.conversation_id, row.last_read_at as string]));
+  const messagesByConversation = new Map<string, ElleDmMessageRow[]>();
+  for (const message of messages) {
+    const list = messagesByConversation.get(message.conversation_id) || [];
+    list.push(message);
+    messagesByConversation.set(message.conversation_id, list);
+  }
+
+  return rows.map((row) => {
+    const otherId = row.user_a === userId ? row.user_b : row.user_a;
+    const convoMessages = messagesByConversation.get(row.id) || [];
+    const lastMessage = convoMessages[convoMessages.length - 1] || null;
+    const lastRead = readByConversation.get(row.id);
+    const unreadCount = convoMessages.filter((message) =>
+      message.sender_id !== userId && (!lastRead || new Date(message.created_at).getTime() > new Date(lastRead).getTime())
+    ).length;
+    return {
+      ...row,
+      other_profile: profileById.get(otherId) || null,
+      last_message: lastMessage,
+      unread_count: unreadCount,
+    } as ElleDmConversationRow;
+  }).sort((a, b) => {
+    const aTime = a.last_message?.created_at || a.created_at;
+    const bTime = b.last_message?.created_at || b.created_at;
+    return new Date(bTime).getTime() - new Date(aTime).getTime();
+  });
+}
+
+export async function fetchElleDmMessages(conversationId: string) {
+  const result = await supabase
+    .from("elle_dm_messages")
+    .select("id, conversation_id, sender_id, body, created_at")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: true })
+    .limit(500);
+  if (result.error) throw result.error;
+  return (result.data || []) as ElleDmMessageRow[];
+}
+
+export async function fetchEllePeople(userId: string) {
+  const result = await supabase
+    .from("elle_profiles")
+    .select("id, username, display_name, bio, is_verified, role_label")
+    .neq("id", userId)
+    .order("display_name", { ascending: true })
+    .limit(50);
+  if (result.error) throw result.error;
+  return (result.data || []) as ElleProfileRow[];
+}
+
+export async function ensureElleDmConversation(userId: string, otherUserId: string) {
+  if (userId === otherUserId) throw new Error("you can’t message yourself");
+  const [user_a, user_b] = [userId, otherUserId].sort();
+  const existing = await supabase
+    .from("elle_dm_conversations")
+    .select("id, user_a, user_b, created_at")
+    .eq("user_a", user_a)
+    .eq("user_b", user_b)
+    .maybeSingle();
+
+  if (existing.error) throw existing.error;
+  if (existing.data) return existing.data;
+
+  const created = await supabase
+    .from("elle_dm_conversations")
+    .insert({ user_a, user_b })
+    .select("id, user_a, user_b, created_at")
+    .single();
+
+  if (!created.error && created.data) return created.data;
+  if (created.error?.code !== "23505") throw created.error;
+
+  const retry = await supabase
+    .from("elle_dm_conversations")
+    .select("id, user_a, user_b, created_at")
+    .eq("user_a", user_a)
+    .eq("user_b", user_b)
+    .single();
+  if (retry.error) throw retry.error;
+  return retry.data;
+}
+
+export async function sendElleDmMessage(conversationId: string, senderId: string, body: string) {
+  const result = await supabase
+    .from("elle_dm_messages")
+    .insert({ conversation_id: conversationId, sender_id: senderId, body: body.trim().slice(0, 2000) })
+    .select("id, conversation_id, sender_id, body, created_at")
+    .single();
+  if (result.error) throw result.error;
+  return result.data as ElleDmMessageRow;
+}
+
+export async function markElleDmRead(conversationId: string, userId: string) {
+  const result = await supabase
+    .from("elle_dm_reads")
+    .upsert(
+      { conversation_id: conversationId, user_id: userId, last_read_at: new Date().toISOString() },
+      { onConflict: "conversation_id,user_id" },
+    );
   if (result.error) throw result.error;
 }
