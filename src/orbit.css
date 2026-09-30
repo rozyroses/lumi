@@ -180,3 +180,57 @@ button:focus-visible, a:focus-visible { outline: 3px solid #8c6ce7; outline-offs
 .elle-auth textarea:focus { border-color: var(--accent); background: var(--surface); }
 .profile-editor-count { display: block; margin-top: 6px; text-align: right; color: var(--muted); font-size: 9px; }
 @media(max-width: 680px) { .feed-header { grid-template-columns: 1fr 1fr; } }
+
+
+/* Persistent social interactions */
+.post-meta .post-follow {
+  margin-left: auto;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 850;
+}
+.post-meta .post-follow.following { background: var(--accent-soft); color: var(--text); }
+.post-actions button:disabled { opacity: .45; cursor: wait; }
+.reply-panel { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.reply-panel form { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 8px; }
+.reply-panel input {
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  outline: 0;
+}
+.reply-panel input:focus { border-color: var(--accent); background: var(--surface); }
+.reply-panel form > button {
+  height: 34px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 10px;
+  font-weight: 850;
+  cursor: pointer;
+}
+.reply-panel form > button:disabled { opacity: .45; cursor: default; }
+.reply-list { display: grid; gap: 11px; margin: 13px 0 0 38px; }
+.reply-item { display: grid; grid-template-columns: 30px 1fr; gap: 8px; }
+.reply-item strong { display: block; font-size: 11px; }
+.reply-item small { color: var(--muted); font-size: 9px; }
+.reply-item p { margin: 4px 0 0; font-size: 11px; line-height: 1.55; }
+.reply-empty { color: var(--muted); font-size: 10px; }
+.who button.following { background: var(--accent-soft); color: var(--text); }
+.who-empty { padding: 5px 14px 14px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+@media(max-width: 680px) {
+  .post-meta .post-follow { order: 5; margin-left: 0; }
+  .reply-panel form { grid-template-columns: 28px 1fr; }
+  .reply-panel form > button { grid-column: 2; justify-self: end; }
+  .reply-list { margin-left: 0; }
+}
