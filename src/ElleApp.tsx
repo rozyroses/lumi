@@ -1,7 +1,17 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import ElleLanding from "./ElleLanding";
 import { ElleMark, ElleWordmark } from "./ElleBrand";
-import { createClient, type Session } from "@supabase/supabase-js";
+import type { Session } from "@supabase/supabase-js";
+import {
+  createEllePost,
+  ensureElleProfile,
+  fetchEllePosts,
+  normalizeElleUsername,
+  saveElleProfile,
+  supabase,
+  type ElleFeedPostRow,
+  type ElleProfileRow,
+} from "./elleSupabase";
 
 type Tab = "home" | "explore" | "notifications" | "messages" | "bookmarks" | "communities" | "profile" | "ai";
 type FeedMode = "for-you" | "following";
@@ -24,11 +34,6 @@ type Post = {
   tag?: string;
 };
 type AiMessage = { role: "user" | "assistant"; text: string };
-
-const SUPABASE_URL = "https://yrammmjnviozydebshbd.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ecQn0VjaNhnsJR_Kys_Efg_z-CQvzin";
-const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
-const LOCAL_POSTS_KEY = "elle-local-posts-v1";
 
 const starterPosts: Post[] = [
   {
@@ -112,6 +117,36 @@ function compactNumber(value: number) {
   return String(value);
 }
 
+function relativeTime(value: string) {
+  const elapsed = Math.max(0, Date.now() - new Date(value).getTime());
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (elapsed < minute) return "now";
+  if (elapsed < hour) return `${Math.floor(elapsed / minute)}m`;
+  if (elapsed < day) return `${Math.floor(elapsed / hour)}h`;
+  if (elapsed < 7 * day) return `${Math.floor(elapsed / day)}d`;
+  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function feedPostFromRow(row: ElleFeedPostRow, userId?: string): Post {
+  const name = row.profile?.display_name || "elle user";
+  const username = row.profile?.username || "elleuser";
+  return {
+    id: row.id,
+    name,
+    handle: "@" + username,
+    text: row.body,
+    time: relativeTime(row.created_at),
+    avatar: initials(name),
+    likes: 0,
+    reposts: 0,
+    replies: 0,
+    views: "0",
+    mine: Boolean(userId && row.author_id === userId),
+  };
+}
+
 function cx(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
@@ -121,8 +156,15 @@ export default function ElleApp() {
   const [tab, setTab] = useState<Tab>("home");
   const [feedMode, setFeedMode] = useState<FeedMode>("for-you");
   const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<ElleProfileRow | null>(null);
   const [posts, setPosts] = useState<Post[]>(starterPosts);
   const [draft, setDraft] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [socialBusy, setSocialBusy] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [profileForm, setProfileForm] = useState({ display_name: "", username: "", bio: "" });
   const [search, setSearch] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">(() => (localStorage.getItem("elle-theme") as "light" | "dark") || "light");
   const [authOpen, setAuthOpen] = useState(false);
@@ -137,20 +179,15 @@ export default function ElleApp() {
   ]);
   const [messageText, setMessageText] = useState("");
 
-  const displayName = String(session?.user.user_metadata?.display_name || session?.user.email?.split("@")[0] || "guest");
-  const handle = "@" + displayName.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 18);
+  const fallbackDisplayName = String(session?.user.user_metadata?.display_name || session?.user.email?.split("@")[0] || "guest");
+  const displayName = profile?.display_name || fallbackDisplayName;
+  const handle = profile ? "@" + profile.username : "@" + normalizeElleUsername(displayName);
+  const profileBio = profile?.bio || "music, ideas, school, and whatever i’m building next ✦";
 
   useEffect(() => {
     document.documentElement.dataset.elleTheme = theme;
     localStorage.setItem("elle-theme", theme);
   }, [theme]);
-
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(LOCAL_POSTS_KEY) || "[]") as Post[];
-      if (saved.length) setPosts([...saved, ...starterPosts]);
-    } catch {}
-  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -172,6 +209,10 @@ export default function ElleApp() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  useEffect(() => {
+    void refreshSocial();
+  }, [session?.user.id]);
+
   const visiblePosts = useMemo(() => {
     let next = posts;
     if (tab === "bookmarks") next = next.filter((post) => post.bookmarked);
@@ -191,39 +232,42 @@ export default function ElleApp() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function saveMine(nextPosts: Post[]) {
-    const mine = nextPosts.filter((post) => post.mine);
-    localStorage.setItem(LOCAL_POSTS_KEY, JSON.stringify(mine));
+  async function refreshSocial() {
+    setSocialBusy(true);
+    try {
+      const nextProfile = session ? await ensureElleProfile(session.user) : null;
+      const remotePosts = await fetchEllePosts();
+      setProfile(nextProfile);
+      setPosts([...remotePosts.map((row) => feedPostFromRow(row, session?.user.id)), ...starterPosts]);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "couldn’t refresh elle");
+    } finally {
+      setSocialBusy(false);
+    }
   }
 
-  function publish() {
+  async function publish() {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || posting) return;
     if (!session) {
       setAuthMode("signup");
       setAuthOpen(true);
       return;
     }
-    const nextPost: Post = {
-      id: crypto.randomUUID(),
-      name: displayName,
-      handle,
-      text,
-      time: "now",
-      avatar: initials(displayName),
-      likes: 0,
-      reposts: 0,
-      replies: 0,
-      views: "0",
-      mine: true,
-    };
-    const next = [nextPost, ...posts];
-    setPosts(next);
-    saveMine(next);
-    setDraft("");
-    setTab("home");
-    setFeedMode("for-you");
-    setToast("posted to elle ✦");
+    setPosting(true);
+    try {
+      await ensureElleProfile(session.user);
+      await createEllePost(session.user.id, text);
+      setDraft("");
+      setTab("home");
+      setFeedMode("for-you");
+      await refreshSocial();
+      setToast("posted to elle ✦");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "couldn’t post to elle");
+    } finally {
+      setPosting(false);
+    }
   }
 
   function mutatePost(id: string, action: "like" | "repost" | "bookmark") {
@@ -240,9 +284,59 @@ export default function ElleApp() {
         }
         return { ...post, bookmarked: !post.bookmarked };
       });
-      saveMine(next);
       return next;
     });
+  }
+
+  function openProfileEditor() {
+    if (!session) {
+      setAuthMode("signup");
+      setAuthOpen(true);
+      return;
+    }
+    setProfileError("");
+    setProfileForm({
+      display_name: profile?.display_name || displayName,
+      username: profile?.username || normalizeElleUsername(displayName),
+      bio: profile?.bio || "",
+    });
+    setProfileOpen(true);
+  }
+
+  async function submitProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!session || profileBusy) return;
+    const username = normalizeElleUsername(profileForm.username);
+    if (username.length < 3) {
+      setProfileError("username needs at least 3 characters");
+      return;
+    }
+    const display_name = profileForm.display_name.trim();
+    if (!display_name) {
+      setProfileError("add a display name");
+      return;
+    }
+    setProfileBusy(true);
+    setProfileError("");
+    try {
+      const saved = await saveElleProfile({
+        id: session.user.id,
+        username,
+        display_name,
+        bio: profileForm.bio,
+      });
+      const authUpdate = await supabase.auth.updateUser({ data: { display_name: saved.display_name } });
+      if (authUpdate.error) throw authUpdate.error;
+      setProfile(saved);
+      setProfileOpen(false);
+      await refreshSocial();
+      setToast("profile updated ✦");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "couldn’t update profile";
+      setProfileError(message.includes("duplicate") || message.includes("unique") ? "that @username is already taken" : message);
+    } finally {
+      setProfileBusy(false);
+    }
   }
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
@@ -361,6 +455,7 @@ export default function ElleApp() {
             <header className="feed-header">
               <button className={feedMode === "for-you" ? "active" : ""} onClick={() => setFeedMode("for-you")}>For you</button>
               <button className={feedMode === "following" ? "active" : ""} onClick={() => setFeedMode("following")}>Following</button>
+              <button className="feed-settings" onClick={() => void refreshSocial()} aria-label="Refresh feed" title="Refresh feed" disabled={socialBusy}>{socialBusy ? "…" : "↻"}</button>
               <button className="feed-settings" onClick={() => setTheme(theme === "light" ? "dark" : "light")} aria-label="Toggle theme">◐</button>
             </header>
             <section className="compose-card">
@@ -370,7 +465,7 @@ export default function ElleApp() {
                 <div className="compose-tools">
                   <div><button title="Add media">▧</button><button title="Add GIF">GIF</button><button title="Add poll">≡</button><button title="Add emoji">☺</button><button title="Schedule">◷</button></div>
                   <span>{draft.length ? 500 - draft.length : ""}</span>
-                  <button className="publish" disabled={!draft.trim()} onClick={publish}>Post</button>
+                  <button className="publish" disabled={!draft.trim() || posting} onClick={() => void publish()}>{posting ? "Posting…" : "Post"}</button>
                 </div>
               </div>
             </section>
@@ -446,10 +541,10 @@ export default function ElleApp() {
           <>
             <section className="profile-hero">
               <div className="profile-cover" />
-              <div className="profile-row"><div className="avatar profile-avatar">{initials(displayName)}</div><button>{session ? "edit profile" : "create account"}</button></div>
+              <div className="profile-row"><div className="avatar profile-avatar">{initials(displayName)}</div><button onClick={openProfileEditor}>{session ? "edit profile" : "create account"}</button></div>
               <h1>{session ? displayName : "your profile"}</h1>
               <small>{session ? handle : "@you"}</small>
-              <p>music, ideas, school, and whatever i’m building next ✦</p>
+              <p>{session ? profileBio : "make a profile to start building your orbit ✦"}</p>
               <div className="profile-stats"><span><strong>{posts.filter((post) => post.mine).length}</strong> posts</span><span><strong>128</strong> following</span><span><strong>942</strong> followers</span></div>
             </section>
             <div className="profile-tabs"><button className="active">Posts</button><button>Replies</button><button>Media</button><button>Likes</button></div>
@@ -524,6 +619,23 @@ export default function ElleApp() {
             {authError && <div className="auth-error">{authError}</div>}
             <button className="auth-submit" disabled={authBusy}>{authBusy ? "one sec..." : authMode === "signup" ? "create account" : "sign in"}</button>
             <button type="button" className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthError(""); }}>{authMode === "signup" ? "already on elle? sign in" : "new here? create an account"}</button>
+          </form>
+        </div>
+      )}
+
+      {profileOpen && session && (
+        <div className="auth-backdrop" onMouseDown={() => setProfileOpen(false)}>
+          <form role="dialog" aria-modal="true" aria-label="Edit Elle profile" className="elle-auth profile-editor" onSubmit={submitProfile} onMouseDown={(event) => event.stopPropagation()}>
+            <button type="button" className="auth-close" aria-label="Close profile editor" onClick={() => setProfileOpen(false)}>×</button>
+            <div className="elle-logo auth-logo"><ElleWordmark /></div>
+            <p>YOUR CORNER OF ELLE</p>
+            <h2>make it feel like you.</h2>
+            <label>display name<input value={profileForm.display_name} onChange={(event) => setProfileForm((current) => ({ ...current, display_name: event.target.value }))} maxLength={60} required /></label>
+            <label>username<input value={profileForm.username} onChange={(event) => setProfileForm((current) => ({ ...current, username: event.target.value }))} maxLength={24} pattern="[A-Za-z0-9_]{3,24}" required /></label>
+            <label>bio<textarea value={profileForm.bio} onChange={(event) => setProfileForm((current) => ({ ...current, bio: event.target.value }))} maxLength={160} placeholder="what are you into?" /></label>
+            <small className="profile-editor-count">{profileForm.bio.length}/160</small>
+            {profileError && <div className="auth-error">{profileError}</div>}
+            <button className="auth-submit" disabled={profileBusy}>{profileBusy ? "saving..." : "save profile"}</button>
           </form>
         </div>
       )}
