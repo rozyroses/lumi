@@ -161,3 +161,22 @@ button:focus-visible, a:focus-visible { outline: 3px solid #8c6ce7; outline-offs
   .orbit-hero-art { height: 310px; }
   .orbit-floating-star { bottom: 275px; }
 }
+
+
+/* Live social data controls */
+.feed-header { grid-template-columns: 1fr 1fr 44px 44px; }
+.feed-header .feed-settings:disabled { opacity: .55; cursor: wait; }
+.elle-auth.profile-editor { max-height: min(720px, calc(100vh - 32px)); overflow-y: auto; }
+.elle-auth textarea {
+  min-height: 94px;
+  resize: vertical;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  outline: 0;
+}
+.elle-auth textarea:focus { border-color: var(--accent); background: var(--surface); }
+.profile-editor-count { display: block; margin-top: 6px; text-align: right; color: var(--muted); font-size: 9px; }
+@media(max-width: 680px) { .feed-header { grid-template-columns: 1fr 1fr; } }
