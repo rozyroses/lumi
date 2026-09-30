@@ -476,7 +476,7 @@ export default function ElleApp() {
       </aside>
 
       <section className="elle-center">
-        <header className="elle-mobile-top"><button className="elle-logo mini" aria-label="Elle home" onClick={() => nav("home")}><ElleMark /></button><strong>{headerTitle}</strong><button aria-label="Toggle theme" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>◐</button></header>
+        <header className="elle-mobile-top"><button className="elle-logo mini" aria-label="Elle home" onClick={() => nav("home")}><ElleMark /></button><strong>{headerTitle}</strong><div className="mobile-top-actions"><button aria-label="Toggle theme" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>◐</button><button className="mobile-profile-shortcut" aria-label="Open profile" onClick={() => nav("profile")}><span className="avatar tiny me">{initials(displayName)}</span></button></div></header>
 
         {tab === "home" && (
           <>
@@ -660,6 +660,7 @@ export default function ElleApp() {
         <button aria-label="ai" className={tab === "ai" ? "active ai" : "ai"} onClick={() => nav("ai")}><span>✦</span></button>
         <button aria-label="notifications" className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><span>♡</span></button>
         <button aria-label="messages" className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><span>✉</span></button>
+        <button aria-label="profile" className={tab === "profile" ? "active" : ""} onClick={() => nav("profile")}><span className="avatar tiny me">{initials(displayName)}</span></button>
       </nav>
 
     </main>
