@@ -6,17 +6,25 @@ import type { Session } from "@supabase/supabase-js";
 import {
   createEllePost,
   createElleReply,
+  ensureElleDmConversation,
   ensureElleProfile,
+  fetchElleDmConversations,
+  fetchElleDmMessages,
   fetchElleNotifications,
+  fetchEllePeople,
   fetchElleSocial,
+  markElleDmRead,
   markElleNotificationsRead,
   normalizeElleUsername,
   saveElleProfile,
+  sendElleDmMessage,
   supabase,
   toggleElleBookmark,
   toggleElleFollow,
   toggleElleLike,
   toggleElleRepost,
+  type ElleDmConversationRow,
+  type ElleDmMessageRow,
   type ElleFeedPostRow,
   type ElleNotificationRow,
   type ElleProfileRow,
@@ -120,6 +128,12 @@ export default function ElleApp() {
   const [profile, setProfile] = useState<ElleProfileRow | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [notifications, setNotifications] = useState<ElleNotificationRow[]>([]);
+  const [dmConversations, setDmConversations] = useState<ElleDmConversationRow[]>([]);
+  const [dmMessages, setDmMessages] = useState<ElleDmMessageRow[]>([]);
+  const [dmPeople, setDmPeople] = useState<ElleProfileRow[]>([]);
+  const [activeDmId, setActiveDmId] = useState<string | null>(null);
+  const [newDmOpen, setNewDmOpen] = useState(false);
+  const [dmBusy, setDmBusy] = useState(false);
   const [replies, setReplies] = useState<ElleReplyRow[]>([]);
   const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [socialProfiles, setSocialProfiles] = useState<ElleProfileRow[]>([]);
@@ -155,6 +169,8 @@ export default function ElleApp() {
   const handle = profile ? "@" + profile.username : "@" + normalizeElleUsername(displayName);
   const profileBio = profile?.bio || "music, ideas, school, and whatever i’m building next ✦";
   const unreadNotifications = notifications.filter((item) => !item.read_at).length;
+  const unreadMessages = dmConversations.reduce((sum, item) => sum + item.unread_count, 0);
+  const activeDm = dmConversations.find((item) => item.id === activeDmId) || null;
 
   useEffect(() => {
     document.documentElement.dataset.elleTheme = theme;
@@ -184,6 +200,7 @@ export default function ElleApp() {
   useEffect(() => {
     void refreshSocial();
     void refreshNotifications();
+    void refreshDms();
   }, [session?.user.id]);
 
   useEffect(() => {
@@ -215,6 +232,29 @@ export default function ElleApp() {
       }
     })();
   }, [tab, session?.user.id]);
+
+  useEffect(() => {
+    if (!session?.user.id) return;
+    const channel = supabase
+      .channel(`elle-dms-${session.user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "elle_dm_messages" },
+        () => {
+          void refreshDms();
+          if (tab === "messages" && activeDmId) void loadDm(activeDmId, true);
+        },
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [session?.user.id, tab, activeDmId]);
+
+  useEffect(() => {
+    if (tab === "messages" && activeDmId && session?.user.id) {
+      void loadDm(activeDmId, true);
+    }
+  }, [tab, activeDmId, session?.user.id]);
+
 
   const visiblePosts = useMemo(() => {
     let next = posts;
@@ -279,6 +319,85 @@ export default function ElleApp() {
     if (item.kind === "repost") return "repost" as const;
     if (item.kind === "reply") return "reply" as const;
     return "profile" as const;
+  }
+
+  async function refreshDms() {
+    if (!session?.user.id) {
+      setDmConversations([]);
+      setDmMessages([]);
+      setDmPeople([]);
+      setActiveDmId(null);
+      return;
+    }
+    try {
+      const [conversations, people] = await Promise.all([
+        fetchElleDmConversations(session.user.id),
+        fetchEllePeople(session.user.id),
+      ]);
+      setDmConversations(conversations);
+      setDmPeople(people);
+      if (activeDmId && !conversations.some((item) => item.id === activeDmId)) {
+        setActiveDmId(conversations[0]?.id || null);
+      } else if (!activeDmId && conversations.length) {
+        setActiveDmId(conversations[0].id);
+      }
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "couldn’t refresh messages");
+    }
+  }
+
+  async function loadDm(conversationId: string, markRead = false) {
+    if (!session?.user.id) return;
+    try {
+      setDmMessages(await fetchElleDmMessages(conversationId));
+      if (markRead) {
+        await markElleDmRead(conversationId, session.user.id);
+        setDmConversations((current) => current.map((item) => item.id === conversationId ? { ...item, unread_count: 0 } : item));
+      }
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "couldn’t load messages");
+    }
+  }
+
+  async function startDm(person: ElleProfileRow) {
+    if (!session?.user.id || dmBusy) {
+      if (!session) {
+        setAuthMode("signup");
+        setAuthOpen(true);
+      }
+      return;
+    }
+    setDmBusy(true);
+    try {
+      await ensureElleProfile(session.user);
+      const conversation = await ensureElleDmConversation(session.user.id, person.id);
+      setActiveDmId(conversation.id);
+      setNewDmOpen(false);
+      setTab("messages");
+      await refreshDms();
+      await loadDm(conversation.id, true);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "couldn’t start that chat");
+    } finally {
+      setDmBusy(false);
+    }
+  }
+
+  async function submitDm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const body = messageText.trim();
+    if (!body || !activeDmId || !session?.user.id || dmBusy) return;
+    setDmBusy(true);
+    try {
+      await sendElleDmMessage(activeDmId, session.user.id, body);
+      setMessageText("");
+      await loadDm(activeDmId, true);
+      await refreshDms();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "couldn’t send message");
+    } finally {
+      setDmBusy(false);
+    }
   }
 
   async function publish() {
@@ -525,7 +644,7 @@ export default function ElleApp() {
           <button aria-label="home" className={tab === "home" ? "active" : ""} onClick={() => nav("home")}><i><ElleIcon name="home" /></i><span>Home</span></button>
           <button aria-label="explore" className={tab === "explore" ? "active" : ""} onClick={() => nav("explore")}><i><ElleIcon name="search" /></i><span>Explore</span></button>
           <button aria-label="notifications" className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><i><ElleIcon name="bell" /></i><span>Notifications</span>{unreadNotifications > 0 && <em>{unreadNotifications > 99 ? "99+" : unreadNotifications}</em>}</button>
-          <button aria-label="messages" className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><i><ElleIcon name="message" /></i><span>Messages</span></button>
+          <button aria-label="messages" className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><i><ElleIcon name="message" /></i><span>Messages</span>{unreadMessages > 0 && <em>{unreadMessages > 99 ? "99+" : unreadMessages}</em>}</button>
           <button className={tab === "bookmarks" ? "active" : ""} onClick={() => nav("bookmarks")}><i><ElleIcon name="bookmark" /></i><span>Bookmarks</span></button>
           <button className={tab === "communities" ? "active" : ""} onClick={() => nav("communities")}><i><ElleIcon name="users" /></i><span>Communities</span></button>
           <button aria-label="ai" className={tab === "ai" ? "active ai-nav" : "ai-nav"} onClick={() => nav("ai")}><i><ElleIcon name="sparkle" /></i><span>Elle AI</span></button>
@@ -619,21 +738,63 @@ export default function ElleApp() {
         )}
 
         {tab === "messages" && (
-          <section className="messages-page">
+          <section className="messages-page real-dms">
             <div className="message-list">
-              <div className="page-title"><h1>messages</h1><button aria-label="New message"><ElleIcon name="plus" /></button></div>
-              {[
-                ["MW", "Maya West", "send me that track when you’re done 👀", "4m"],
-                ["CR", "Creative Room", "you joining the feedback space tonight?", "1h"],
-                ["JL", "Jordan Lee", "that idea actually could work", "3h"],
-              ].map((item, index) => <button className={index === 0 ? "dm active" : "dm"} key={item[1]}><span className="avatar">{item[0]}</span><span><strong>{item[1]}</strong><small>{item[2]}</small></span><em>{item[3]}</em></button>)}
+              <div className="page-title"><h1>messages</h1><button aria-label="New message" onClick={() => setNewDmOpen((open) => !open)}><ElleIcon name="plus" /></button></div>
+              {newDmOpen && (
+                <div className="new-dm-panel">
+                  <strong>start a conversation</strong>
+                  {dmPeople.length ? dmPeople.map((person) => (
+                    <button key={person.id} onClick={() => void startDm(person)} disabled={dmBusy}>
+                      <span className="avatar">{initials(person.display_name)}</span>
+                      <span><b>{person.display_name}{person.is_verified && <span className="verified ceo-verified" title="Verified">✓</span>}</b><small>@{person.username}{person.role_label ? ` · ${person.role_label}` : ""}</small></span>
+                    </button>
+                  )) : <small>no other Elle profiles yet.</small>}
+                </div>
+              )}
+              {session && dmConversations.length ? dmConversations.map((conversation) => {
+                const person = conversation.other_profile;
+                return (
+                  <button className={cx("dm", activeDmId === conversation.id && "active")} key={conversation.id} onClick={() => setActiveDmId(conversation.id)}>
+                    <span className="avatar">{initials(person?.display_name || "elle user")}</span>
+                    <span>
+                      <strong>{person?.display_name || "elle user"}{person?.is_verified && <span className="verified ceo-verified" title="Verified">✓</span>}</strong>
+                      <small>{conversation.last_message?.body || `say hi to @${person?.username || "elleuser"}`}</small>
+                    </span>
+                    <em>{conversation.last_message ? relativeTime(conversation.last_message.created_at) : ""}</em>
+                    {conversation.unread_count > 0 && <b className="dm-unread">{conversation.unread_count > 9 ? "9+" : conversation.unread_count}</b>}
+                  </button>
+                );
+              }) : session ? (
+                <div className="dm-list-empty"><ElleIcon name="message" /><strong>no messages yet</strong><small>tap + to start one.</small></div>
+              ) : (
+                <div className="dm-list-empty"><ElleIcon name="message" /><strong>sign in to message</strong><small>your conversations will live here.</small></div>
+              )}
             </div>
-            <div className="message-chat">
-              <header><span className="avatar">MW</span><div><strong>Maya West</strong><small>@mayawest</small></div></header>
-              <div className="dm-thread"><p className="theirs">you still working on that app idea?</p><p className="mine">yeahhh we changing the whole look 😭</p><p className="theirs">send me that track when you’re done 👀</p></div>
-              <form onSubmit={(event) => { event.preventDefault(); if (messageText.trim()) { setToast("message sent ✦"); setMessageText(""); } }}>
-                <button type="button" aria-label="Add"><ElleIcon name="plus" /></button><input value={messageText} onChange={(event) => setMessageText(event.target.value)} placeholder="start a message" /><button aria-label="Send message"><ElleIcon name="send" /></button>
-              </form>
+            <div className={cx("message-chat", activeDm && "has-chat")}>
+              {activeDm ? (
+                <>
+                  <header>
+                    <span className="avatar">{initials(activeDm.other_profile?.display_name || "elle user")}</span>
+                    <div><strong>{activeDm.other_profile?.display_name || "elle user"}{activeDm.other_profile?.is_verified && <span className="verified ceo-verified" title="Verified">✓</span>}</strong><small>@{activeDm.other_profile?.username || "elleuser"}{activeDm.other_profile?.role_label ? ` · ${activeDm.other_profile.role_label}` : ""}</small></div>
+                  </header>
+                  <div className="dm-thread">
+                    {dmMessages.length ? dmMessages.map((message) => (
+                      <div className={cx("dm-message-row", message.sender_id === session?.user.id && "mine")} key={message.id}>
+                        <p className={message.sender_id === session?.user.id ? "mine" : "theirs"}>{message.body}</p>
+                        <small>{relativeTime(message.created_at)}</small>
+                      </div>
+                    )) : <div className="dm-chat-empty"><ElleIcon name="message" /><p>start the conversation ✦</p></div>}
+                  </div>
+                  <form onSubmit={submitDm}>
+                    <button type="button" aria-label="Add"><ElleIcon name="plus" /></button>
+                    <input value={messageText} maxLength={2000} onChange={(event) => setMessageText(event.target.value)} placeholder={`message @${activeDm.other_profile?.username || "elleuser"}`} />
+                    <button aria-label="Send message" disabled={!messageText.trim() || dmBusy}><ElleIcon name="send" /></button>
+                  </form>
+                </>
+              ) : (
+                <div className="dm-chat-empty large"><ElleIcon name="message" /><h2>your messages</h2><p>choose a conversation or start a new one.</p></div>
+              )}
             </div>
           </section>
         )}
@@ -740,7 +901,7 @@ export default function ElleApp() {
         <button aria-label="explore" className={tab === "explore" ? "active" : ""} onClick={() => nav("explore")}><ElleIcon name="search" /></button>
         <button aria-label="ai" className={tab === "ai" ? "active ai" : "ai"} onClick={() => nav("ai")}><ElleIcon name="sparkle" /></button>
         <button aria-label="notifications" className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><ElleIcon name="bell" />{unreadNotifications > 0 && <em className="dock-badge">{unreadNotifications > 9 ? "9+" : unreadNotifications}</em>}</button>
-        <button aria-label="messages" className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><ElleIcon name="message" /></button>
+        <button aria-label="messages" className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><ElleIcon name="message" />{unreadMessages > 0 && <em className="dock-badge">{unreadMessages > 9 ? "9+" : unreadMessages}</em>}</button>
         <button aria-label="profile" className={tab === "profile" ? "active" : ""} onClick={() => nav("profile")}><span className="avatar tiny me">{initials(displayName)}</span></button>
       </nav>
 
