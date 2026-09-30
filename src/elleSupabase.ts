@@ -218,7 +218,7 @@ export async function toggleElleFollow(followerId: string, followingId: string, 
   if (result.error) throw result.error;
 }
 
-export async function saveElleProfile(profile: ElleProfileRow) {
+export async function saveElleProfile(profile: Pick<ElleProfileRow, "id" | "username" | "display_name" | "bio">) {
   const result = await supabase
     .from("elle_profiles")
     .upsert(
