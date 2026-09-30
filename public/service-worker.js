@@ -1,4 +1,4 @@
-const CACHE = "elle-orbit-v4";
+const CACHE = "elle-orbit-v5";
 const BASE = new URL("./", self.location.href).pathname;
 const SHELL = [BASE, "manifest.webmanifest", "elle-icon.svg", "elle-space.webp", "elle-icons.svg", "assets/elle-app.css", "assets/elle-app.js"].map((path) => path.startsWith(BASE) ? path : BASE + path);
 self.addEventListener("install", (event) => {
