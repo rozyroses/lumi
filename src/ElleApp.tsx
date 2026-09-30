@@ -4,19 +4,26 @@ import { ElleMark, ElleWordmark } from "./ElleBrand";
 import type { Session } from "@supabase/supabase-js";
 import {
   createEllePost,
+  createElleReply,
   ensureElleProfile,
-  fetchEllePosts,
+  fetchElleSocial,
   normalizeElleUsername,
   saveElleProfile,
   supabase,
+  toggleElleBookmark,
+  toggleElleFollow,
+  toggleElleLike,
+  toggleElleRepost,
   type ElleFeedPostRow,
   type ElleProfileRow,
+  type ElleReplyRow,
 } from "./elleSupabase";
 
 type Tab = "home" | "explore" | "notifications" | "messages" | "bookmarks" | "communities" | "profile" | "ai";
 type FeedMode = "for-you" | "following";
 type Post = {
   id: string;
+  authorId?: string;
   name: string;
   handle: string;
   text: string;
@@ -134,15 +141,19 @@ function feedPostFromRow(row: ElleFeedPostRow, userId?: string): Post {
   const username = row.profile?.username || "elleuser";
   return {
     id: row.id,
+    authorId: row.author_id,
     name,
     handle: "@" + username,
     text: row.body,
     time: relativeTime(row.created_at),
     avatar: initials(name),
-    likes: 0,
-    reposts: 0,
-    replies: 0,
+    likes: row.likes,
+    reposts: row.reposts,
+    replies: row.replies,
     views: "0",
+    liked: row.liked,
+    reposted: row.reposted,
+    bookmarked: row.bookmarked,
     mine: Boolean(userId && row.author_id === userId),
   };
 }
@@ -158,6 +169,15 @@ export default function ElleApp() {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<ElleProfileRow | null>(null);
   const [posts, setPosts] = useState<Post[]>(starterPosts);
+  const [replies, setReplies] = useState<ElleReplyRow[]>([]);
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
+  const [socialProfiles, setSocialProfiles] = useState<ElleProfileRow[]>([]);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [followerCount, setFollowerCount] = useState(0);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [replyBusy, setReplyBusy] = useState(false);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [posting, setPosting] = useState(false);
   const [socialBusy, setSocialBusy] = useState(false);
@@ -221,9 +241,9 @@ export default function ElleApp() {
       const needle = search.toLowerCase();
       next = next.filter((post) => (post.name + " " + post.handle + " " + post.text + " " + (post.tag || "")).toLowerCase().includes(needle));
     }
-    if (feedMode === "following" && tab === "home") next = next.filter((post) => ["@mayawest", "@jordn"].includes(post.handle) || post.mine);
+    if (feedMode === "following" && tab === "home") next = next.filter((post) => post.mine || Boolean(post.authorId && followingIds.includes(post.authorId)));
     return next;
-  }, [posts, tab, search, feedMode]);
+  }, [posts, tab, search, feedMode, followingIds]);
 
   function nav(next: Tab) {
     setLanding(false);
@@ -236,9 +256,14 @@ export default function ElleApp() {
     setSocialBusy(true);
     try {
       const nextProfile = session ? await ensureElleProfile(session.user) : null;
-      const remotePosts = await fetchEllePosts();
+      const snapshot = await fetchElleSocial(session?.user.id);
       setProfile(nextProfile);
-      setPosts([...remotePosts.map((row) => feedPostFromRow(row, session?.user.id)), ...starterPosts]);
+      setReplies(snapshot.replies);
+      setFollowingIds(snapshot.followingIds);
+      setFollowingCount(snapshot.followingCount);
+      setFollowerCount(snapshot.followerCount);
+      setSocialProfiles(snapshot.profiles);
+      setPosts([...snapshot.posts.map((row) => feedPostFromRow(row, session?.user.id)), ...starterPosts]);
     } catch (error) {
       setToast(error instanceof Error ? error.message : "couldn’t refresh elle");
     } finally {
@@ -270,22 +295,88 @@ export default function ElleApp() {
     }
   }
 
-  function mutatePost(id: string, action: "like" | "repost" | "bookmark") {
-    setPosts((current) => {
-      const next = current.map((post) => {
-        if (post.id !== id) return post;
-        if (action === "like") {
-          const liked = !post.liked;
-          return { ...post, liked, likes: Math.max(0, post.likes + (liked ? 1 : -1)) };
-        }
-        if (action === "repost") {
-          const reposted = !post.reposted;
-          return { ...post, reposted, reposts: Math.max(0, post.reposts + (reposted ? 1 : -1)) };
-        }
-        return { ...post, bookmarked: !post.bookmarked };
-      });
-      return next;
-    });
+  async function mutatePost(post: Post, action: "like" | "repost" | "bookmark") {
+    if (!session) {
+      setAuthMode("signup");
+      setAuthOpen(true);
+      return;
+    }
+    if (!post.authorId) {
+      setToast("that’s a sample post — try a live post ✦");
+      return;
+    }
+    const key = `${action}:${post.id}`;
+    if (actionBusy === key) return;
+    setActionBusy(key);
+    const active = action === "like" ? Boolean(post.liked) : action === "repost" ? Boolean(post.reposted) : Boolean(post.bookmarked);
+    setPosts((current) => current.map((item) => {
+      if (item.id !== post.id) return item;
+      if (action === "like") return { ...item, liked: !active, likes: Math.max(0, item.likes + (active ? -1 : 1)) };
+      if (action === "repost") return { ...item, reposted: !active, reposts: Math.max(0, item.reposts + (active ? -1 : 1)) };
+      return { ...item, bookmarked: !active };
+    }));
+    try {
+      await ensureElleProfile(session.user);
+      if (action === "like") await toggleElleLike(post.id, session.user.id, active);
+      if (action === "repost") await toggleElleRepost(post.id, session.user.id, active);
+      if (action === "bookmark") await toggleElleBookmark(post.id, session.user.id, active);
+    } catch (error) {
+      await refreshSocial();
+      setToast(error instanceof Error ? error.message : "couldn’t update that post");
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function submitReply(post: Post) {
+    const body = replyText.trim();
+    if (!body || replyBusy) return;
+    if (!session) {
+      setAuthMode("signup");
+      setAuthOpen(true);
+      return;
+    }
+    if (!post.authorId) {
+      setToast("that’s a sample post — try a live post ✦");
+      return;
+    }
+    setReplyBusy(true);
+    try {
+      await ensureElleProfile(session.user);
+      await createElleReply(post.id, session.user.id, body);
+      setReplyText("");
+      setReplyingTo(post.id);
+      await refreshSocial();
+      setToast("reply posted ✦");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "couldn’t post reply");
+    } finally {
+      setReplyBusy(false);
+    }
+  }
+
+  async function toggleFollow(authorId: string) {
+    if (!session) {
+      setAuthMode("signup");
+      setAuthOpen(true);
+      return;
+    }
+    if (authorId === session.user.id) return;
+    const active = followingIds.includes(authorId);
+    const key = `follow:${authorId}`;
+    if (actionBusy === key) return;
+    setActionBusy(key);
+    setFollowingIds((current) => active ? current.filter((id) => id !== authorId) : [...current, authorId]);
+    try {
+      await ensureElleProfile(session.user);
+      await toggleElleFollow(session.user.id, authorId, active);
+      await refreshSocial();
+    } catch (error) {
+      await refreshSocial();
+      setToast(error instanceof Error ? error.message : "couldn’t update follow");
+    } finally {
+      setActionBusy(null);
+    }
   }
 
   function openProfileEditor() {
@@ -545,7 +636,7 @@ export default function ElleApp() {
               <h1>{session ? displayName : "your profile"}</h1>
               <small>{session ? handle : "@you"}</small>
               <p>{session ? profileBio : "make a profile to start building your orbit ✦"}</p>
-              <div className="profile-stats"><span><strong>{posts.filter((post) => post.mine).length}</strong> posts</span><span><strong>128</strong> following</span><span><strong>942</strong> followers</span></div>
+              <div className="profile-stats"><span><strong>{posts.filter((post) => post.mine).length}</strong> posts</span><span><strong>{followingCount}</strong> following</span><span><strong>{followerCount}</strong> followers</span></div>
             </section>
             <div className="profile-tabs"><button className="active">Posts</button><button>Replies</button><button>Media</button><button>Likes</button></div>
           </>
@@ -559,16 +650,38 @@ export default function ElleApp() {
               <article className="post" key={post.id}>
                 <div className={cx("avatar", post.mine && "me")}>{post.avatar}</div>
                 <div className="post-body">
-                  <div className="post-meta"><strong>{post.name}{post.verified && <span className="verified">✓</span>}</strong><span>{post.handle}</span><i>·</i><span>{post.time}</span><button>•••</button></div>
+                  <div className="post-meta">
+                    <strong>{post.name}{post.verified && <span className="verified">✓</span>}</strong><span>{post.handle}</span><i>·</i><span>{post.time}</span>
+                    {post.authorId && !post.mine && <button className={cx("post-follow", followingIds.includes(post.authorId) && "following")} onClick={() => void toggleFollow(post.authorId!)}>{followingIds.includes(post.authorId) ? "following" : "follow"}</button>}
+                    <button>•••</button>
+                  </div>
                   <p className="post-text">{post.text}</p>
                   <div className="post-actions">
-                    <button><i>◯</i><span>{post.replies || ""}</span></button>
-                    <button className={post.reposted ? "active repost" : ""} onClick={() => mutatePost(post.id, "repost")}><i>⇄</i><span>{post.reposts ? compactNumber(post.reposts) : ""}</span></button>
-                    <button className={post.liked ? "active like" : ""} onClick={() => mutatePost(post.id, "like")}><i>{post.liked ? "♥" : "♡"}</i><span>{post.likes ? compactNumber(post.likes) : ""}</span></button>
+                    <button className={replyingTo === post.id ? "active" : ""} onClick={() => { setReplyingTo(replyingTo === post.id ? null : post.id); setReplyText(""); }}><i>◯</i><span>{post.replies || ""}</span></button>
+                    <button className={post.reposted ? "active repost" : ""} disabled={actionBusy === `repost:${post.id}`} onClick={() => void mutatePost(post, "repost")}><i>⇄</i><span>{post.reposts ? compactNumber(post.reposts) : ""}</span></button>
+                    <button className={post.liked ? "active like" : ""} disabled={actionBusy === `like:${post.id}`} onClick={() => void mutatePost(post, "like")}><i>{post.liked ? "♥" : "♡"}</i><span>{post.likes ? compactNumber(post.likes) : ""}</span></button>
                     <button><i>▥</i><span>{post.views}</span></button>
-                    <button className={post.bookmarked ? "active bookmark" : ""} onClick={() => mutatePost(post.id, "bookmark")}><i>{post.bookmarked ? "▰" : "⌑"}</i></button>
+                    <button className={post.bookmarked ? "active bookmark" : ""} disabled={actionBusy === `bookmark:${post.id}`} onClick={() => void mutatePost(post, "bookmark")}><i>{post.bookmarked ? "▰" : "⌑"}</i></button>
                     <button onClick={() => { setAiInput("help me respond to this post: " + post.text); nav("ai"); }}><i>✦</i></button>
                   </div>
+                  {replyingTo === post.id && (
+                    <div className="reply-panel">
+                      <form onSubmit={(event) => { event.preventDefault(); void submitReply(post); }}>
+                        <div className="avatar me tiny">{initials(displayName)}</div>
+                        <input value={replyText} onChange={(event) => setReplyText(event.target.value)} maxLength={500} placeholder={session ? `reply to ${post.handle}` : "sign in to reply"} />
+                        <button disabled={!replyText.trim() || replyBusy}>{replyBusy ? "…" : "reply"}</button>
+                      </form>
+                      <div className="reply-list">
+                        {replies.filter((reply) => reply.post_id === post.id).map((reply) => (
+                          <div className="reply-item" key={reply.id}>
+                            <div className="avatar tiny">{initials(reply.profile?.display_name || "elle user")}</div>
+                            <div><strong>{reply.profile?.display_name || "elle user"}</strong><small>@{reply.profile?.username || "elleuser"} · {relativeTime(reply.created_at)}</small><p>{reply.body}</p></div>
+                          </div>
+                        ))}
+                        {!replies.some((reply) => reply.post_id === post.id) && <small className="reply-empty">be the first reply ✦</small>}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </article>
             )) : <div className="empty-state"><span>⌑</span><h2>nothing here yet</h2><p>{tab === "bookmarks" ? "save a post and it’ll show up here." : "try a different search."}</p></div>}
@@ -591,7 +704,14 @@ export default function ElleApp() {
         </section>
         <section className="side-card who">
           <h2>who to follow</h2>
-          {[["AR", "Ari Rivers", "@aririvers"], ["DV", "Devon Vale", "@devonvale"], ["KS", "Kai Studio", "@kaistudio"]].map((person) => <div key={person[2]}><span className="avatar">{person[0]}</span><span><strong>{person[1]}</strong><small>{person[2]}</small></span><button onClick={(event) => { event.currentTarget.textContent = event.currentTarget.textContent === "follow" ? "following" : "follow"; }}>follow</button></div>)}
+          {socialProfiles.filter((person) => person.id !== session?.user.id).slice(0, 3).map((person) => (
+            <div key={person.id}>
+              <span className="avatar">{initials(person.display_name)}</span>
+              <span><strong>{person.display_name}</strong><small>@{person.username}</small></span>
+              <button className={followingIds.includes(person.id) ? "following" : ""} onClick={() => void toggleFollow(person.id)}>{followingIds.includes(person.id) ? "following" : "follow"}</button>
+            </div>
+          ))}
+          {!socialProfiles.some((person) => person.id !== session?.user.id) && <p className="who-empty">new people will show up here as elle grows ✦</p>}
         </section>
         <footer>Terms · Privacy · Accessibility · About · © 2026 Elle</footer>
       </aside>
