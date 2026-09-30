@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import ElleLanding from "./ElleLanding";
 import { ElleMark, ElleWordmark } from "./ElleBrand";
+import { ElleIcon } from "./ElleIcon";
 import type { Session } from "@supabase/supabase-js";
 import {
   createEllePost,
@@ -458,25 +459,25 @@ export default function ElleApp() {
       <aside className="elle-left">
         <button className="elle-logo" onClick={() => nav("home")} aria-label="Elle home"><ElleWordmark /></button>
         <nav className="elle-nav" aria-label="Main navigation">
-          <button aria-label="home" className={tab === "home" ? "active" : ""} onClick={() => nav("home")}><i>⌂</i><span>Home</span></button>
-          <button aria-label="explore" className={tab === "explore" ? "active" : ""} onClick={() => nav("explore")}><i>⌕</i><span>Explore</span></button>
-          <button aria-label="notifications" className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><i>♡</i><span>Notifications</span><em>3</em></button>
-          <button aria-label="messages" className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><i>✉</i><span>Messages</span></button>
-          <button className={tab === "bookmarks" ? "active" : ""} onClick={() => nav("bookmarks")}><i>⌑</i><span>Bookmarks</span></button>
-          <button className={tab === "communities" ? "active" : ""} onClick={() => nav("communities")}><i>◎</i><span>Communities</span></button>
-          <button aria-label="ai" className={tab === "ai" ? "active ai-nav" : "ai-nav"} onClick={() => nav("ai")}><i>✦</i><span>Elle AI</span></button>
-          <button className={tab === "profile" ? "active" : ""} onClick={() => nav("profile")}><i>◉</i><span>Profile</span></button>
+          <button aria-label="home" className={tab === "home" ? "active" : ""} onClick={() => nav("home")}><i><ElleIcon name="home" /></i><span>Home</span></button>
+          <button aria-label="explore" className={tab === "explore" ? "active" : ""} onClick={() => nav("explore")}><i><ElleIcon name="search" /></i><span>Explore</span></button>
+          <button aria-label="notifications" className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><i><ElleIcon name="bell" /></i><span>Notifications</span><em>3</em></button>
+          <button aria-label="messages" className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><i><ElleIcon name="message" /></i><span>Messages</span></button>
+          <button className={tab === "bookmarks" ? "active" : ""} onClick={() => nav("bookmarks")}><i><ElleIcon name="bookmark" /></i><span>Bookmarks</span></button>
+          <button className={tab === "communities" ? "active" : ""} onClick={() => nav("communities")}><i><ElleIcon name="users" /></i><span>Communities</span></button>
+          <button aria-label="ai" className={tab === "ai" ? "active ai-nav" : "ai-nav"} onClick={() => nav("ai")}><i><ElleIcon name="sparkle" /></i><span>Elle AI</span></button>
+          <button className={tab === "profile" ? "active" : ""} onClick={() => nav("profile")}><i><ElleIcon name="profile" /></i><span>Profile</span></button>
         </nav>
         <button className="elle-post-button" onClick={() => { nav("home"); document.getElementById("elle-compose")?.focus(); }}>Post</button>
         <div className="elle-account">
           <div className="avatar me">{initials(displayName)}</div>
           <div><strong>{session ? displayName : "guest"}</strong><small>{session ? handle : "sign in to post"}</small></div>
-          {session ? <button onClick={() => void supabase.auth.signOut()} aria-label="Sign out">•••</button> : <button onClick={() => setAuthOpen(true)}>sign in</button>}
+          {session ? <button onClick={() => void supabase.auth.signOut()} aria-label="Sign out"><ElleIcon name="more" /></button> : <button onClick={() => setAuthOpen(true)}>sign in</button>}
         </div>
       </aside>
 
       <section className="elle-center">
-        <header className="elle-mobile-top"><button className="elle-logo mini" aria-label="Elle home" onClick={() => nav("home")}><ElleMark /></button><strong>{headerTitle}</strong><div className="mobile-top-actions"><button aria-label="Toggle theme" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>◐</button><button className="mobile-profile-shortcut" aria-label="Open profile" onClick={() => nav("profile")}><span className="avatar tiny me">{initials(displayName)}</span></button></div></header>
+        <header className="elle-mobile-top"><button className="elle-logo mini" aria-label="Elle home" onClick={() => nav("home")}><ElleMark /></button><strong>{headerTitle}</strong><div className="mobile-top-actions"><button aria-label="Toggle theme" onClick={() => setTheme(theme === "light" ? "dark" : "light")}><ElleIcon name="theme" /></button><button className="mobile-profile-shortcut" aria-label="Open profile" onClick={() => nav("profile")}><span className="avatar tiny me">{initials(displayName)}</span></button></div></header>
 
         {tab === "home" && (
           <>
@@ -484,8 +485,8 @@ export default function ElleApp() {
             <header className="feed-header">
               <button className={feedMode === "for-you" ? "active" : ""} onClick={() => setFeedMode("for-you")}>For you</button>
               <button className={feedMode === "following" ? "active" : ""} onClick={() => setFeedMode("following")}>Following</button>
-              <button className="feed-settings" onClick={() => void refreshSocial()} aria-label="Refresh feed" title="Refresh feed" disabled={socialBusy}>{socialBusy ? "…" : "↻"}</button>
-              <button className="feed-settings" onClick={() => setTheme(theme === "light" ? "dark" : "light")} aria-label="Toggle theme">◐</button>
+              <button className="feed-settings" onClick={() => void refreshSocial()} aria-label="Refresh feed" title="Refresh feed" disabled={socialBusy}>{socialBusy ? "…" : <ElleIcon name="refresh" />}</button>
+              <button className="feed-settings" onClick={() => setTheme(theme === "light" ? "dark" : "light")} aria-label="Toggle theme"><ElleIcon name="theme" /></button>
             </header>
             <section className="compose-card">
               <div className="avatar me">{initials(displayName)}</div>
@@ -503,7 +504,7 @@ export default function ElleApp() {
 
         {tab === "explore" && (
           <section className="explore-head">
-            <label><span>⌕</span><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="search elle" /></label>
+            <label><span><ElleIcon name="search" /></span><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="search elle" /></label>
             <div className="explore-tabs"><button className="active">For you</button><button>Trending</button><button>News</button><button>Creators</button></div>
           </section>
         )}
@@ -511,7 +512,7 @@ export default function ElleApp() {
         {tab === "ai" && (
           <section className="ai-page">
             <div className="ai-hero">
-              <div className="ai-orb">✦</div>
+              <div className="ai-orb"><ElleIcon name="sparkle" /></div>
               <p>ELLE AI</p>
               <h1>ask the timeline anything.</h1>
               <span>brainstorm, study, rewrite, explain a trend, or make sense of the noise.</span>
@@ -521,9 +522,9 @@ export default function ElleApp() {
               {aiBusy && <div className="ai-bubble assistant"><b>✦</b><p className="typing">thinking<span>•••</span></p></div>}
             </div>
             <form className="ai-composer" onSubmit={sendAi}>
-              <button type="button">＋</button>
+              <button type="button" aria-label="Add"><ElleIcon name="plus" /></button>
               <input value={aiInput} onChange={(event) => setAiInput(event.target.value)} placeholder="ask elle anything..." />
-              <button className="ai-send" disabled={!aiInput.trim() || aiBusy}>↑</button>
+              <button className="ai-send" aria-label="Send" disabled={!aiInput.trim() || aiBusy}><ElleIcon name="send" /></button>
             </form>
           </section>
         )}
@@ -540,7 +541,7 @@ export default function ElleApp() {
         {tab === "messages" && (
           <section className="messages-page">
             <div className="message-list">
-              <div className="page-title"><h1>messages</h1><button>✎</button></div>
+              <div className="page-title"><h1>messages</h1><button aria-label="New message"><ElleIcon name="plus" /></button></div>
               {[
                 ["MW", "Maya West", "send me that track when you’re done 👀", "4m"],
                 ["CR", "Creative Room", "you joining the feedback space tonight?", "1h"],
@@ -551,7 +552,7 @@ export default function ElleApp() {
               <header><span className="avatar">MW</span><div><strong>Maya West</strong><small>@mayawest</small></div></header>
               <div className="dm-thread"><p className="theirs">you still working on that app idea?</p><p className="mine">yeahhh we changing the whole look 😭</p><p className="theirs">send me that track when you’re done 👀</p></div>
               <form onSubmit={(event) => { event.preventDefault(); if (messageText.trim()) { setToast("message sent ✦"); setMessageText(""); } }}>
-                <button type="button">＋</button><input value={messageText} onChange={(event) => setMessageText(event.target.value)} placeholder="start a message" /><button>↑</button>
+                <button type="button" aria-label="Add"><ElleIcon name="plus" /></button><input value={messageText} onChange={(event) => setMessageText(event.target.value)} placeholder="start a message" /><button aria-label="Send message"><ElleIcon name="send" /></button>
               </form>
             </div>
           </section>
@@ -591,16 +592,16 @@ export default function ElleApp() {
                   <div className="post-meta">
                     <strong>{post.name}{post.verified && <span className="verified ceo-verified" title="Verified">✓</span>}</strong>{post.roleLabel && <span className="post-role">{post.roleLabel}</span>}<span>{post.handle}</span><i>·</i><span>{post.time}</span>
                     {post.authorId && !post.mine && <button className={cx("post-follow", followingIds.includes(post.authorId) && "following")} onClick={() => void toggleFollow(post.authorId!)}>{followingIds.includes(post.authorId) ? "following" : "follow"}</button>}
-                    <button>•••</button>
+                    <button aria-label="More post options"><ElleIcon name="more" /></button>
                   </div>
                   <p className="post-text">{post.text}</p>
                   <div className="post-actions">
-                    <button className={replyingTo === post.id ? "active" : ""} onClick={() => { setReplyingTo(replyingTo === post.id ? null : post.id); setReplyText(""); }}><i>◯</i><span>{post.replies || ""}</span></button>
-                    <button className={post.reposted ? "active repost" : ""} disabled={actionBusy === `repost:${post.id}`} onClick={() => void mutatePost(post, "repost")}><i>⇄</i><span>{post.reposts ? compactNumber(post.reposts) : ""}</span></button>
-                    <button className={post.liked ? "active like" : ""} disabled={actionBusy === `like:${post.id}`} onClick={() => void mutatePost(post, "like")}><i>{post.liked ? "♥" : "♡"}</i><span>{post.likes ? compactNumber(post.likes) : ""}</span></button>
-                    <button><i>▥</i><span>{post.views}</span></button>
-                    <button className={post.bookmarked ? "active bookmark" : ""} disabled={actionBusy === `bookmark:${post.id}`} onClick={() => void mutatePost(post, "bookmark")}><i>{post.bookmarked ? "▰" : "⌑"}</i></button>
-                    <button onClick={() => { setAiInput("help me respond to this post: " + post.text); nav("ai"); }}><i>✦</i></button>
+                    <button aria-label="Reply" className={replyingTo === post.id ? "active" : ""} onClick={() => { setReplyingTo(replyingTo === post.id ? null : post.id); setReplyText(""); }}><i><ElleIcon name="reply" /></i><span>{post.replies || ""}</span></button>
+                    <button aria-label="Repost" className={post.reposted ? "active repost" : ""} disabled={actionBusy === `repost:${post.id}`} onClick={() => void mutatePost(post, "repost")}><i><ElleIcon name="repost" /></i><span>{post.reposts ? compactNumber(post.reposts) : ""}</span></button>
+                    <button aria-label="Like" className={post.liked ? "active like" : ""} disabled={actionBusy === `like:${post.id}`} onClick={() => void mutatePost(post, "like")}><i><ElleIcon name={post.liked ? "heart-fill" : "heart"} /></i><span>{post.likes ? compactNumber(post.likes) : ""}</span></button>
+                    <button aria-label="Views"><i><ElleIcon name="chart" /></i><span>{post.views}</span></button>
+                    <button aria-label="Bookmark" className={post.bookmarked ? "active bookmark" : ""} disabled={actionBusy === `bookmark:${post.id}`} onClick={() => void mutatePost(post, "bookmark")}><i><ElleIcon name="bookmark" /></i></button>
+                    <button aria-label="Ask Elle AI" onClick={() => { setAiInput("help me respond to this post: " + post.text); nav("ai"); }}><i><ElleIcon name="sparkle" /></i></button>
                   </div>
                   {replyingTo === post.id && (
                     <div className="reply-panel">
@@ -628,9 +629,9 @@ export default function ElleApp() {
       </section>
 
       <aside className="elle-right">
-        <label className="right-search"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} onFocus={() => nav("explore")} placeholder="Search" /></label>
+        <label className="right-search"><span><ElleIcon name="search" /></span><input value={search} onChange={(event) => setSearch(event.target.value)} onFocus={() => nav("explore")} placeholder="Search" /></label>
         <section className="ai-card">
-          <div className="ai-card-top"><span>✦</span><small>ELLE AI</small></div>
+          <div className="ai-card-top"><span><ElleIcon name="sparkle" /></span><small>ELLE AI</small></div>
           <h2>need a second brain?</h2>
           <p>ask about a post, write something better, study, brainstorm, or untangle a thought.</p>
           <button onClick={() => nav("ai")}>ask elle <span>↗</span></button>
@@ -655,11 +656,11 @@ export default function ElleApp() {
       </aside>
 
       <nav className="mobile-dock" aria-label="Mobile navigation">
-        <button aria-label="home" className={tab === "home" ? "active" : ""} onClick={() => nav("home")}><span>⌂</span></button>
-        <button aria-label="explore" className={tab === "explore" ? "active" : ""} onClick={() => nav("explore")}><span>⌕</span></button>
-        <button aria-label="ai" className={tab === "ai" ? "active ai" : "ai"} onClick={() => nav("ai")}><span>✦</span></button>
-        <button aria-label="notifications" className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><span>♡</span></button>
-        <button aria-label="messages" className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><span>✉</span></button>
+        <button aria-label="home" className={tab === "home" ? "active" : ""} onClick={() => nav("home")}><ElleIcon name="home" /></button>
+        <button aria-label="explore" className={tab === "explore" ? "active" : ""} onClick={() => nav("explore")}><ElleIcon name="search" /></button>
+        <button aria-label="ai" className={tab === "ai" ? "active ai" : "ai"} onClick={() => nav("ai")}><ElleIcon name="sparkle" /></button>
+        <button aria-label="notifications" className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><ElleIcon name="bell" /></button>
+        <button aria-label="messages" className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><ElleIcon name="message" /></button>
         <button aria-label="profile" className={tab === "profile" ? "active" : ""} onClick={() => nav("profile")}><span className="avatar tiny me">{initials(displayName)}</span></button>
       </nav>
 

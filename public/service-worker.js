@@ -1,6 +1,6 @@
-const CACHE = "elle-orbit-v3";
+const CACHE = "elle-orbit-v4";
 const BASE = new URL("./", self.location.href).pathname;
-const SHELL = [BASE, "manifest.webmanifest", "elle-icon.svg", "elle-space.webp", "assets/elle-app.css", "assets/elle-app.js"].map((path) => path.startsWith(BASE) ? path : BASE + path);
+const SHELL = [BASE, "manifest.webmanifest", "elle-icon.svg", "elle-space.webp", "elle-icons.svg", "assets/elle-app.css", "assets/elle-app.js"].map((path) => path.startsWith(BASE) ? path : BASE + path);
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });
