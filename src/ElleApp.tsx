@@ -7,7 +7,9 @@ import {
   createEllePost,
   createElleReply,
   ensureElleProfile,
+  fetchElleNotifications,
   fetchElleSocial,
+  markElleNotificationsRead,
   normalizeElleUsername,
   saveElleProfile,
   supabase,
@@ -16,6 +18,7 @@ import {
   toggleElleLike,
   toggleElleRepost,
   type ElleFeedPostRow,
+  type ElleNotificationRow,
   type ElleProfileRow,
   type ElleReplyRow,
 } from "./elleSupabase";
@@ -116,6 +119,7 @@ export default function ElleApp() {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<ElleProfileRow | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [notifications, setNotifications] = useState<ElleNotificationRow[]>([]);
   const [replies, setReplies] = useState<ElleReplyRow[]>([]);
   const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [socialProfiles, setSocialProfiles] = useState<ElleProfileRow[]>([]);
@@ -150,6 +154,7 @@ export default function ElleApp() {
   const displayName = profile?.display_name || fallbackDisplayName;
   const handle = profile ? "@" + profile.username : "@" + normalizeElleUsername(displayName);
   const profileBio = profile?.bio || "music, ideas, school, and whatever i’m building next ✦";
+  const unreadNotifications = notifications.filter((item) => !item.read_at).length;
 
   useEffect(() => {
     document.documentElement.dataset.elleTheme = theme;
@@ -178,7 +183,38 @@ export default function ElleApp() {
 
   useEffect(() => {
     void refreshSocial();
+    void refreshNotifications();
   }, [session?.user.id]);
+
+  useEffect(() => {
+    if (!session?.user.id) return;
+    const channel = supabase
+      .channel(`elle-notifications-${session.user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "elle_notifications", filter: `recipient_id=eq.${session.user.id}` },
+        () => { void refreshNotifications(); },
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [session?.user.id]);
+
+  useEffect(() => {
+    if (tab !== "notifications" || !session?.user.id) return;
+    void (async () => {
+      try {
+        const fresh = await fetchElleNotifications(session.user.id);
+        setNotifications(fresh);
+        if (fresh.some((item) => !item.read_at)) {
+          await markElleNotificationsRead(session.user.id);
+          const readAt = new Date().toISOString();
+          setNotifications((current) => current.map((item) => item.read_at ? item : { ...item, read_at: readAt }));
+        }
+      } catch (error) {
+        setToast(error instanceof Error ? error.message : "couldn’t load notifications");
+      }
+    })();
+  }, [tab, session?.user.id]);
 
   const visiblePosts = useMemo(() => {
     let next = posts;
@@ -216,6 +252,33 @@ export default function ElleApp() {
     } finally {
       setSocialBusy(false);
     }
+  }
+
+  async function refreshNotifications() {
+    if (!session?.user.id) {
+      setNotifications([]);
+      return;
+    }
+    try {
+      setNotifications(await fetchElleNotifications(session.user.id));
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "couldn’t refresh notifications");
+    }
+  }
+
+  function notificationText(item: ElleNotificationRow) {
+    const actor = item.actor?.display_name || "someone";
+    if (item.kind === "like") return `${actor} liked your post`;
+    if (item.kind === "repost") return `${actor} reposted your post`;
+    if (item.kind === "reply") return `${actor} replied to your post`;
+    return `${actor} followed you`;
+  }
+
+  function notificationIcon(item: ElleNotificationRow) {
+    if (item.kind === "like") return "heart" as const;
+    if (item.kind === "repost") return "repost" as const;
+    if (item.kind === "reply") return "reply" as const;
+    return "profile" as const;
   }
 
   async function publish() {
@@ -461,7 +524,7 @@ export default function ElleApp() {
         <nav className="elle-nav" aria-label="Main navigation">
           <button aria-label="home" className={tab === "home" ? "active" : ""} onClick={() => nav("home")}><i><ElleIcon name="home" /></i><span>Home</span></button>
           <button aria-label="explore" className={tab === "explore" ? "active" : ""} onClick={() => nav("explore")}><i><ElleIcon name="search" /></i><span>Explore</span></button>
-          <button aria-label="notifications" className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><i><ElleIcon name="bell" /></i><span>Notifications</span><em>3</em></button>
+          <button aria-label="notifications" className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><i><ElleIcon name="bell" /></i><span>Notifications</span>{unreadNotifications > 0 && <em>{unreadNotifications > 99 ? "99+" : unreadNotifications}</em>}</button>
           <button aria-label="messages" className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><i><ElleIcon name="message" /></i><span>Messages</span></button>
           <button className={tab === "bookmarks" ? "active" : ""} onClick={() => nav("bookmarks")}><i><ElleIcon name="bookmark" /></i><span>Bookmarks</span></button>
           <button className={tab === "communities" ? "active" : ""} onClick={() => nav("communities")}><i><ElleIcon name="users" /></i><span>Communities</span></button>
@@ -531,10 +594,27 @@ export default function ElleApp() {
 
         {tab === "notifications" && (
           <section className="simple-page">
-            <div className="page-title"><h1>notifications</h1><button>⚙</button></div>
-            <div className="notification"><span className="notice-icon">♡</span><div><strong>Maya West and 18 others liked your post</strong><p>“working on something new today…”</p><small>8m</small></div></div>
-            <div className="notification"><span className="notice-icon ai">✦</span><div><strong>Elle AI</strong><p>your saved topic “creative tech” is moving today.</p><small>31m</small></div></div>
-            <div className="notification"><span className="avatar tiny">JL</span><div><strong>Jordan Lee followed you</strong><p>@jordn</p><small>2h</small></div></div>
+            <div className="page-title"><div><h1>notifications</h1><p>what’s happening around your orbit.</p></div></div>
+            <div className="notification-list">
+              {session && notifications.length ? notifications.map((item) => (
+                <article className={cx("notification", !item.read_at && "unread")} key={item.id}>
+                  <span className={cx("notice-icon", item.kind)}><ElleIcon name={notificationIcon(item)} /></span>
+                  <div className="notification-copy">
+                    <div className="notification-title">
+                      <span className="avatar tiny">{initials(item.actor?.display_name || "elle user")}</span>
+                      <strong>{notificationText(item)}{item.actor?.is_verified && <span className="verified ceo-verified" title="Verified">✓</span>}</strong>
+                    </div>
+                    {item.post_body && <p>“{item.post_body.length > 120 ? item.post_body.slice(0, 117) + "…" : item.post_body}”</p>}
+                    <small>@{item.actor?.username || "elleuser"}{item.actor?.role_label ? ` · ${item.actor.role_label}` : ""} · {relativeTime(item.created_at)}</small>
+                  </div>
+                  {!item.read_at && <span className="notification-unread-dot" aria-label="Unread" />}
+                </article>
+              )) : session ? (
+                <div className="empty-state notifications-empty"><ElleIcon name="bell" /><h2>all caught up</h2><p>likes, replies, reposts, and follows will show up here.</p></div>
+              ) : (
+                <div className="empty-state notifications-empty"><ElleIcon name="bell" /><h2>sign in for notifications</h2><p>your activity alerts live here.</p></div>
+              )}
+            </div>
           </section>
         )}
 
@@ -659,7 +739,7 @@ export default function ElleApp() {
         <button aria-label="home" className={tab === "home" ? "active" : ""} onClick={() => nav("home")}><ElleIcon name="home" /></button>
         <button aria-label="explore" className={tab === "explore" ? "active" : ""} onClick={() => nav("explore")}><ElleIcon name="search" /></button>
         <button aria-label="ai" className={tab === "ai" ? "active ai" : "ai"} onClick={() => nav("ai")}><ElleIcon name="sparkle" /></button>
-        <button aria-label="notifications" className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><ElleIcon name="bell" /></button>
+        <button aria-label="notifications" className={tab === "notifications" ? "active" : ""} onClick={() => nav("notifications")}><ElleIcon name="bell" />{unreadNotifications > 0 && <em className="dock-badge">{unreadNotifications > 9 ? "9+" : unreadNotifications}</em>}</button>
         <button aria-label="messages" className={tab === "messages" ? "active" : ""} onClick={() => nav("messages")}><ElleIcon name="message" /></button>
         <button aria-label="profile" className={tab === "profile" ? "active" : ""} onClick={() => nav("profile")}><span className="avatar tiny me">{initials(displayName)}</span></button>
       </nav>
